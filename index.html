@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Info App</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      background: #f0f0f0;
+    }
+
+    .container {
+      text-align: center;
+    }
+
+    button {
+      padding: 12px 32px;
+      font-size: 18px;
+      cursor: pointer;
+      background: #4a90d9;
+      color: white;
+      border: none;
+      border-radius: 6px;
+    }
+
+    button:hover {
+      background: #357abd;
+    }
+
+    #message {
+      margin-top: 20px;
+      font-size: 20px;
+      min-height: 30px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <button id="infoBtn">Info</button>
+    <div id="message"></div>
+  </div>
+
+  <script>
+    const btn = document.getElementById('infoBtn');
+    const message = document.getElementById('message');
+    let timer = null;
+
+    btn.addEventListener('click', () => {
+      clearTimeout(timer);
+      const today = new Date().toLocaleDateString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+      });
+      message.textContent = `Hello, Charlie! Today's date is ${today}.`;
+      timer = setTimeout(() => { message.textContent = ''; }, 10000);
+    });
+  </script>
+</body>
+</html>

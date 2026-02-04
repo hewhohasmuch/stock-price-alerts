@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Price Alert Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; color: #333; }
+
+    header {
+      background: #1a1a2e; color: #fff; padding: 16px 24px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    header h1 { font-size: 20px; font-weight: 600; }
+
+    .container { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+
+    .card {
+      background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      padding: 20px; margin-bottom: 20px;
+    }
+    .card h2 { font-size: 16px; margin-bottom: 14px; color: #555; }
+
+    .form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; }
+    .form-group input {
+      padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 140px;
+    }
+    .form-group input:focus { outline: none; border-color: #4a6cf7; }
+
+    button {
+      padding: 8px 16px; border: none; border-radius: 4px; font-size: 13px;
+      cursor: pointer; font-weight: 500; transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-primary { background: #4a6cf7; color: #fff; }
+    .btn-danger { background: #e74c3c; color: #fff; }
+    .btn-toggle { background: #f0ad4e; color: #fff; }
+    .btn-enable { background: #27ae60; color: #fff; }
+
+    .error-msg { color: #e74c3c; font-size: 13px; margin-top: 8px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { text-align: left; padding: 10px 8px; border-bottom: 2px solid #eee; color: #888; font-size: 12px; text-transform: uppercase; white-space: nowrap; }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: #4a6cf7; }
+    th .sort-arrow { font-size: 10px; margin-left: 3px; }
+    td { padding: 10px 8px; border-bottom: 1px solid #f0f0f0; }
+    tr:last-child td { border-bottom: none; }
+
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+    }
+    .badge-on { background: #d4edda; color: #155724; }
+    .badge-off { background: #f8d7da; color: #721c24; }
+
+    .actions { display: flex; gap: 6px; }
+    .empty { text-align: center; color: #999; padding: 32px 0; }
+    .mono { font-family: monospace; font-size: 12px; color: #888; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Stock Price Alert Dashboard</h1>
+  </header>
+
+  <div class="container">
+    <div class="card">
+      <h2>Add Alert</h2>
+      <form id="addForm">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="symbol">Symbol</label>
+            <input id="symbol" type="text" placeholder="AAPL" required style="text-transform:uppercase;">
+          </div>
+          <div class="form-group">
+            <label for="above">Above Price ($)</label>
+            <input id="above" type="number" step="0.01" placeholder="250.00">
+          </div>
+          <div class="form-group">
+            <label for="below">Below Price ($)</label>
+            <input id="below" type="number" step="0.01" placeholder="200.00">
+          </div>
+          <div class="form-group">
+            <label for="notes">Notes</label>
+            <textarea id="notes" maxlength="50" placeholder="Optional notes" style="padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:14px;width:180px;height:36px;resize:none;font-family:inherit;"></textarea>
+          </div>
+          <button type="submit" class="btn-primary" id="addBtn">Add Alert</button>
+        </div>
+        <div id="formError" class="error-msg"></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Alerts</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th class="sortable" onclick="setSort('symbol')">Symbol<span class="sort-arrow" id="sort-symbol"></span></th>
+            <th class="sortable" onclick="setSort('name')">Name<span class="sort-arrow" id="sort-name"></span></th>
+            <th class="sortable" onclick="setSort('price')">Price<span class="sort-arrow" id="sort-price"></span></th>
+            <th>Above</th>
+            <th>Below</th>
+            <th>Notes</th>
+            <th class="sortable" onclick="setSort('createdAt')">Created<span class="sort-arrow" id="sort-createdAt"></span></th>
+            <th class="sortable" onclick="setSort('enabled')">Status<span class="sort-arrow" id="sort-enabled"></span></th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="alertsBody">
+          <tr><td colspan="10" class="empty">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const alertsBody = document.getElementById("alertsBody");
+    const addForm = document.getElementById("addForm");
+    const formError = document.getElementById("formError");
+    const addBtn = document.getElementById("addBtn");
+
+    let sortCol = null;
+    let sortAsc = true;
+    let priceCache = {};
+
+    function setSort(col) {
+      if (sortCol === col) {
+        sortAsc = !sortAsc;
+      } else {
+        sortCol = col;
+        sortAsc = true;
+      }
+      updateSortArrows();
+      loadAlerts();
+    }
+
+    function updateSortArrows() {
+      ["symbol", "name", "price", "createdAt", "enabled"].forEach(col => {
+        const el = document.getElementById("sort-" + col);
+        if (el) el.textContent = sortCol === col ? (sortAsc ? "\u25B2" : "\u25BC") : "";
+      });
+    }
+
+    function sortAlerts(alerts) {
+      if (!sortCol) return alerts;
+      return [...alerts].sort((a, b) => {
+        let va, vb;
+        if (sortCol === "price") {
+          va = priceCache[a.symbol] ?? Infinity;
+          vb = priceCache[b.symbol] ?? Infinity;
+        } else if (sortCol === "enabled") {
+          va = a.enabled ? 1 : 0;
+          vb = b.enabled ? 1 : 0;
+        } else if (sortCol === "createdAt") {
+          va = a.createdAt || "";
+          vb = b.createdAt || "";
+        } else {
+          va = (a[sortCol] || "").toLowerCase();
+          vb = (b[sortCol] || "").toLowerCase();
+        }
+        if (va < vb) return sortAsc ? -1 : 1;
+        if (va > vb) return sortAsc ? 1 : -1;
+        return 0;
+      });
+    }
+
+    function fmt(val) {
+      return val != null ? "$" + Number(val).toFixed(2) : "—";
+    }
+
+    function fmtDate(iso) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      const mo = d.getMonth() + 1;
+      const day = d.getDate();
+      const yr = String(d.getFullYear()).slice(2);
+      let hr = d.getHours();
+      const ampm = hr >= 12 ? "PM" : "AM";
+      hr = hr % 12 || 12;
+      const min = String(d.getMinutes()).padStart(2, "0");
+      return `${mo}/${day}/${yr} ${hr}:${min} ${ampm}`;
+    }
+
+    function esc(str) {
+      const d = document.createElement("div");
+      d.textContent = str;
+      return d.innerHTML;
+    }
+
+    function editNotes(span, id) {
+      const cell = span.parentElement;
+      const current = span.textContent === "—" ? "" : span.textContent;
+      cell.innerHTML = `
+        <textarea maxlength="50" style="padding:4px;border:1px solid #4a6cf7;border-radius:4px;font-size:13px;width:140px;height:32px;resize:none;font-family:inherit;">${esc(current)}</textarea>
+        <button class="btn-primary" style="padding:4px 8px;font-size:12px;margin-left:4px;" onclick="saveNotes('${id}', this)">Save</button>
+      `;
+      cell.querySelector("textarea").focus();
+    }
+
+    async function saveNotes(id, btn) {
+      const cell = btn.parentElement;
+      const ta = cell.querySelector("textarea");
+      const notes = ta.value.slice(0, 50);
+      btn.disabled = true;
+      btn.textContent = "...";
+      try {
+        await fetch(`/api/alerts/${id}/notes`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ notes }),
+        });
+        await loadAlerts();
+      } catch {
+        btn.disabled = false;
+        btn.textContent = "Save";
+      }
+    }
+
+    async function loadPrices() {
+      const cells = document.querySelectorAll(".price-cell");
+      const symbols = [...new Set([...cells].map(c => c.dataset.symbol))];
+      if (symbols.length === 0) return;
+      try {
+        const res = await fetch(`/api/prices?symbols=${encodeURIComponent(symbols.join(","))}`);
+        if (res.ok) {
+          const prices = await res.json();
+          Object.assign(priceCache, prices);
+        }
+      } catch {}
+      cells.forEach(cell => {
+        const sym = cell.dataset.symbol;
+        if (priceCache[sym] != null) {
+          cell.textContent = "$" + Number(priceCache[sym]).toFixed(2);
+          cell.style.color = "#333";
+        } else {
+          cell.textContent = "N/A";
+        }
+      });
+      if (sortCol === "price") loadAlerts(true);
+    }
+
+    async function loadAlerts(skipPrices) {
+      try {
+        const res = await fetch("/api/alerts");
+        const alerts = await res.json();
+        if (alerts.length === 0) {
+          alertsBody.innerHTML = '<tr><td colspan="10" class="empty">No alerts yet. Add one above.</td></tr>';
+          return;
+        }
+        const sorted = sortAlerts(alerts);
+        alertsBody.innerHTML = sorted.map(a => `
+          <tr>
+            <td class="mono">${a.id}</td>
+            <td><strong>${a.symbol}</strong></td>
+            <td>${a.name}</td>
+            <td class="price-cell" data-symbol="${a.symbol}" style="color:#888;">…</td>
+            <td>${fmt(a.abovePrice)}</td>
+            <td>${fmt(a.belowPrice)}</td>
+            <td class="notes-cell" data-id="${a.id}">
+              <span class="notes-display" onclick="editNotes(this, '${a.id}')" title="${a.notes ? esc(a.notes) : 'Click to edit'}" style="cursor:pointer;min-width:40px;display:inline-block;">${a.notes ? (a.notes.length > 15 ? esc(a.notes.slice(0, 15)) + '…' : esc(a.notes)) : '<em style="color:#bbb">—</em>'}</span>
+            </td>
+            <td class="mono">${fmtDate(a.createdAt)}</td>
+            <td><span class="badge ${a.enabled ? "badge-on" : "badge-off"}" onclick="toggleAlert('${a.id}', ${a.enabled})" style="cursor:pointer;" title="Click to toggle">${a.enabled ? "Enabled" : "Disabled"}</span></td>
+            <td class="actions">
+              <button onclick="removeAlert('${a.id}')" title="Remove alert" style="background:none;padding:4px 6px;line-height:1;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
+            </td>
+          </tr>
+        `).join("");
+        if (!skipPrices) loadPrices();
+      } catch {
+        alertsBody.innerHTML = '<tr><td colspan="10" class="empty">Failed to load alerts.</td></tr>';
+      }
+    }
+
+    addForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      formError.textContent = "";
+      const symbol = document.getElementById("symbol").value.trim().toUpperCase();
+      const above = document.getElementById("above").value;
+      const below = document.getElementById("below").value;
+      const notes = document.getElementById("notes").value.trim();
+
+      if (!above && !below) {
+        formError.textContent = "Enter at least one price threshold.";
+        return;
+      }
+
+      addBtn.disabled = true;
+      addBtn.textContent = "Adding...";
+      try {
+        const body = { symbol };
+        if (above) body.abovePrice = Number(above);
+        if (below) body.belowPrice = Number(below);
+        if (notes) body.notes = notes;
+
+        const res = await fetch("/api/alerts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          formError.textContent = data.error || "Failed to add alert.";
+          return;
+        }
+        addForm.reset();
+        await loadAlerts();
+      } catch {
+        formError.textContent = "Network error.";
+      } finally {
+        addBtn.disabled = false;
+        addBtn.textContent = "Add Alert";
+      }
+    });
+
+    async function toggleAlert(id, currentlyEnabled) {
+      const action = currentlyEnabled ? "disable" : "enable";
+      await fetch(`/api/alerts/${id}/${action}`, { method: "PATCH" });
+      await loadAlerts();
+    }
+
+    async function removeAlert(id) {
+      if (!confirm("Remove this alert?")) return;
+      await fetch(`/api/alerts/${id}`, { method: "DELETE" });
+      await loadAlerts();
+    }
+
+    loadAlerts();
+  </script>
+</body>
+</html>

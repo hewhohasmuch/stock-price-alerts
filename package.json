@@ -1,0 +1,29 @@
+{
+  "name": "stock-price-alerts",
+  "version": "1.0.0",
+  "description": "CLI tool that monitors stock prices and sends email/SMS alerts when prices cross user-defined thresholds",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/scheduler.ts",
+    "cli": "tsx src/cli.ts",
+    "web": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.7",
+    "lowdb": "^7.0.1",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.16",
+    "twilio": "^5.4.3",
+    "express": "^4.21.0",
+    "yahoo-finance2": "^2.14.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.5",
+    "@types/node-cron": "^3.0.11",
+    "@types/nodemailer": "^6.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
