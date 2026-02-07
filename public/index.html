@@ -274,6 +274,7 @@
     let sortCol = null;
     let sortAsc = true;
     let priceCache = {};
+    let nameCache = {};
 
     function setSort(col) {
       if (sortCol === col) {
@@ -375,8 +376,11 @@
       try {
         const res = await fetch(`/api/prices?symbols=${encodeURIComponent(symbols.join(","))}`);
         if (res.ok) {
-          const prices = await res.json();
-          Object.assign(priceCache, prices);
+          const data = await res.json();
+          for (const [sym, info] of Object.entries(data)) {
+            priceCache[sym] = info.price;
+            nameCache[sym] = info.name;
+          }
         }
       } catch {}
       cells.forEach(cell => {
@@ -386,6 +390,13 @@
           cell.style.color = "#333";
         } else {
           cell.textContent = "N/A";
+        }
+      });
+      // Update name cells with resolved company names
+      document.querySelectorAll(".name-cell").forEach(cell => {
+        const sym = cell.dataset.symbol;
+        if (nameCache[sym] && nameCache[sym] !== sym) {
+          cell.textContent = nameCache[sym];
         }
       });
       if (sortCol === "price") loadAlerts(true);
@@ -405,7 +416,7 @@
           <tr>
             <td class="mono">${a.id}</td>
             <td><strong>${a.symbol}</strong></td>
-            <td>${a.name}</td>
+            <td class="name-cell" data-symbol="${a.symbol}">${nameCache[a.symbol] && nameCache[a.symbol] !== a.symbol ? esc(nameCache[a.symbol]) : esc(a.name)}</td>
             <td class="price-cell" data-symbol="${a.symbol}" style="color:#888;">\u2026</td>
             <td>${fmt(a.abovePrice)}</td>
             <td>${fmt(a.belowPrice)}</td>

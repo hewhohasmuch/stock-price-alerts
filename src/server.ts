@@ -211,8 +211,8 @@ app.post("/api/alerts", requireAuth, async (req, res) => {
         resolvedSymbol = priceResult.symbol;
         resolvedName = priceResult.name;
       }
-    } catch {
-      // Yahoo Finance may be rate-limited; proceed with symbol as name
+    } catch (pfErr) {
+      console.warn(`  Price lookup for ${symbol} failed:`, (pfErr as Error).message);
     }
 
     const alert = await addAlert(
@@ -303,12 +303,13 @@ app.get("/api/prices", requireAuth, async (req, res) => {
       return;
     }
     const results = await fetchPrices(symbols);
-    const map: Record<string, number> = {};
+    const map: Record<string, { price: number; name: string }> = {};
     for (const r of results) {
-      map[r.symbol] = r.price;
+      map[r.symbol] = { price: r.price, name: r.name };
     }
     res.json(map);
   } catch (err) {
+    console.error("GET /api/prices error:", (err as Error).message);
     res.status(500).json({ error: "Failed to fetch prices" });
   }
 });
