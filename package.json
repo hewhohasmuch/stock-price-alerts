@@ -17,8 +17,7 @@
     "lowdb": "^7.0.1",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.16",
-    "twilio": "^5.4.3",
-    "yahoo-finance2": "^2.14.0"
+    "twilio": "^5.4.3"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
