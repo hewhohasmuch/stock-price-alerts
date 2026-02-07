@@ -1,0 +1,26 @@
+# Normalize line endings to LF on commit, checkout as native OS line endings.
+# This prevents diff noise when switching between Linux/ChromeOS and Windows.
+* text=auto
+
+# Force LF for source files (consistent across all platforms)
+*.ts    text eol=lf
+*.js    text eol=lf
+*.json  text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Force LF for shell scripts
+*.sh    text eol=lf
+
+# Force CRLF for Windows-specific scripts
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Binary files — do not modify
+*.png   binary
+*.jpg   binary
+*.ico   binary
