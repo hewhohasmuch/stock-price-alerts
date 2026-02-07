@@ -184,7 +184,7 @@
     </div>
 
     <div class="card">
-      <h2>Alerts</h2>
+      <h2>Alerts <span id="alertCount" style="font-weight:400;color:#999;font-size:14px;"></span></h2>
       <table>
         <thead>
           <tr>
@@ -442,6 +442,7 @@
         const res = await fetch("/api/alerts");
         if (res.status === 401) { showAuth(); return; }
         const alerts = await res.json();
+        document.getElementById("alertCount").textContent = `(${alerts.length})`;
         if (alerts.length === 0) {
           alertsBody.innerHTML = '<tr><td colspan="9" class="empty">No alerts yet. Add one above.</td></tr>';
           return;
