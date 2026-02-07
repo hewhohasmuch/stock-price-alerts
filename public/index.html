@@ -489,6 +489,13 @@
 
     // ── Boot ──────────────────────────────────────────────────────────────
     checkAuth();
+
+    // Auto-refresh prices every 60 seconds
+    setInterval(() => {
+      if (!dashboard.classList.contains("hidden")) {
+        loadPrices();
+      }
+    }, 60_000);
   </script>
 </body>
 </html>
