@@ -1,12 +1,13 @@
 import { Command } from "commander";
-import { addAlert, removeAlert, listAlerts, setAlertEnabled } from "./db.js";
+import { addAlert, removeAlert, listAlerts, setAlertEnabled, createUser, findUserByUsername } from "./db.js";
 import { fetchSinglePrice } from "./services/price-fetcher.js";
 
 const program = new Command();
 
 program
   .name("stock-alerts")
-  .description("Monitor stock prices and get alerts when they cross thresholds");
+  .description("Monitor stock prices and get alerts when they cross thresholds")
+  .requiredOption("-u, --user <username>", "Username to operate as");
 
 program
   .command("add <symbol>")
@@ -14,6 +15,7 @@ program
   .option("--above <price>", "Alert when price goes above this value")
   .option("--below <price>", "Alert when price goes below this value")
   .action(async (symbol: string, opts: { above?: string; below?: string }) => {
+    const userId = await resolveUser();
     const above = opts.above ? parseFloat(opts.above) : undefined;
     const below = opts.below ? parseFloat(opts.below) : undefined;
 
@@ -37,7 +39,7 @@ program
       console.warn(`  Warning: Could not fetch price for ${symbol}. Adding alert anyway.`);
     }
 
-    const alert = await addAlert(name === symbol.toUpperCase() ? symbol.toUpperCase() : symbol.toUpperCase(), name, above, below);
+    const alert = await addAlert(userId, symbol.toUpperCase(), name, above, below);
 
     console.log(`\nAlert added:`);
     console.log(`  ID:     ${alert.id}`);
@@ -51,7 +53,8 @@ program
   .command("remove <id>")
   .description("Remove a stock price alert")
   .action(async (id: string) => {
-    const removed = await removeAlert(id);
+    const userId = await resolveUser();
+    const removed = await removeAlert(id, userId);
     if (removed) {
       console.log(`Alert ${id} removed.`);
     } else {
@@ -64,7 +67,8 @@ program
   .command("list")
   .description("List all stock price alerts")
   .action(async () => {
-    const alerts = await listAlerts();
+    const userId = await resolveUser();
+    const alerts = await listAlerts(userId);
     if (alerts.length === 0) {
       console.log("No alerts configured. Use 'add' to create one.");
       return;
@@ -92,7 +96,8 @@ program
   .command("enable <id>")
   .description("Enable a stock price alert")
   .action(async (id: string) => {
-    const ok = await setAlertEnabled(id, true);
+    const userId = await resolveUser();
+    const ok = await setAlertEnabled(id, userId, true);
     if (ok) {
       console.log(`Alert ${id} enabled.`);
     } else {
@@ -105,7 +110,8 @@ program
   .command("disable <id>")
   .description("Disable a stock price alert")
   .action(async (id: string) => {
-    const ok = await setAlertEnabled(id, false);
+    const userId = await resolveUser();
+    const ok = await setAlertEnabled(id, userId, false);
     if (ok) {
       console.log(`Alert ${id} disabled.`);
     } else {
@@ -113,5 +119,31 @@ program
       process.exit(1);
     }
   });
+
+program
+  .command("register")
+  .description("Create a new user account")
+  .requiredOption("-p, --password <password>", "Password (min 6 characters)")
+  .action(async (opts: { password: string }) => {
+    const username = program.opts().user;
+    try {
+      const user = await createUser(username, opts.password);
+      console.log(`User "${user.username}" created (id: ${user.id}).`);
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+async function resolveUser(): Promise<string> {
+  const username = program.opts().user;
+  const user = await findUserByUsername(username);
+  if (!user) {
+    console.error(`Error: User "${username}" not found.`);
+    console.error(`Register first with: npm run cli -- -u ${username} register -p <password>`);
+    process.exit(1);
+  }
+  return user.id;
+}
 
 program.parse();

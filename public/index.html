@@ -10,9 +10,13 @@
 
     header {
       background: #1a1a2e; color: #fff; padding: 16px 24px;
-      display: flex; align-items: center; gap: 12px;
+      display: flex; align-items: center; gap: 12px; justify-content: space-between;
     }
     header h1 { font-size: 20px; font-weight: 600; }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .header-right span { font-size: 14px; opacity: 0.8; }
+    .btn-logout { background: rgba(255,255,255,0.15); color: #fff; border: none; padding: 6px 14px; border-radius: 4px; font-size: 13px; cursor: pointer; }
+    .btn-logout:hover { background: rgba(255,255,255,0.25); }
 
     .container { max-width: 900px; margin: 24px auto; padding: 0 16px; }
 
@@ -62,14 +66,61 @@
     .actions { display: flex; gap: 6px; }
     .empty { text-align: center; color: #999; padding: 32px 0; }
     .mono { font-family: monospace; font-size: 12px; color: #888; }
+
+    /* Auth styles */
+    .auth-wrapper {
+      display: flex; justify-content: center; align-items: center;
+      min-height: calc(100vh - 60px);
+    }
+    .auth-card {
+      background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      padding: 32px; width: 100%; max-width: 380px;
+    }
+    .auth-card h2 { font-size: 22px; margin-bottom: 20px; color: #1a1a2e; text-align: center; }
+    .auth-card .form-group { margin-bottom: 14px; }
+    .auth-card .form-group input { width: 100%; }
+    .auth-card button[type="submit"] { width: 100%; padding: 10px; font-size: 15px; margin-top: 6px; }
+    .auth-toggle { text-align: center; margin-top: 16px; font-size: 13px; color: #666; }
+    .auth-toggle a { color: #4a6cf7; cursor: pointer; text-decoration: none; font-weight: 500; }
+    .auth-toggle a:hover { text-decoration: underline; }
+
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
   <header>
     <h1>Stock Price Alert Dashboard</h1>
+    <div class="header-right hidden" id="headerRight">
+      <span id="headerUser"></span>
+      <button class="btn-logout" onclick="logout()">Log out</button>
+    </div>
   </header>
 
-  <div class="container">
+  <!-- Auth screen -->
+  <div id="authScreen" class="auth-wrapper hidden">
+    <div class="auth-card">
+      <h2 id="authTitle">Log In</h2>
+      <form id="authForm">
+        <div class="form-group">
+          <label for="authUsername">Username</label>
+          <input id="authUsername" type="text" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="authPassword">Password</label>
+          <input id="authPassword" type="password" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn-primary" id="authBtn">Log In</button>
+        <div id="authError" class="error-msg"></div>
+      </form>
+      <div class="auth-toggle">
+        <span id="authToggleText">Don't have an account?</span>
+        <a id="authToggleLink" onclick="toggleAuthMode()">Register</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dashboard (shown after login) -->
+  <div id="dashboard" class="container hidden">
     <div class="card">
       <h2>Add Alert</h2>
       <form id="addForm">
@@ -121,6 +172,100 @@
   </div>
 
   <script>
+    // ── Auth state ────────────────────────────────────────────────────────
+    let isRegisterMode = false;
+
+    const authScreen   = document.getElementById("authScreen");
+    const dashboard    = document.getElementById("dashboard");
+    const headerRight  = document.getElementById("headerRight");
+    const headerUser   = document.getElementById("headerUser");
+    const authForm     = document.getElementById("authForm");
+    const authTitle    = document.getElementById("authTitle");
+    const authBtn      = document.getElementById("authBtn");
+    const authError    = document.getElementById("authError");
+    const authToggleText = document.getElementById("authToggleText");
+    const authToggleLink = document.getElementById("authToggleLink");
+    const authUsername  = document.getElementById("authUsername");
+    const authPassword  = document.getElementById("authPassword");
+
+    function toggleAuthMode() {
+      isRegisterMode = !isRegisterMode;
+      authTitle.textContent = isRegisterMode ? "Create Account" : "Log In";
+      authBtn.textContent   = isRegisterMode ? "Register" : "Log In";
+      authToggleText.textContent = isRegisterMode ? "Already have an account?" : "Don't have an account?";
+      authToggleLink.textContent = isRegisterMode ? "Log in" : "Register";
+      authPassword.autocomplete  = isRegisterMode ? "new-password" : "current-password";
+      authError.textContent = "";
+    }
+
+    function showAuth() {
+      authScreen.classList.remove("hidden");
+      dashboard.classList.add("hidden");
+      headerRight.classList.add("hidden");
+    }
+
+    function showDashboard(username) {
+      authScreen.classList.add("hidden");
+      dashboard.classList.remove("hidden");
+      headerRight.classList.remove("hidden");
+      headerUser.textContent = username;
+      loadAlerts();
+    }
+
+    authForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      authError.textContent = "";
+      const username = authUsername.value.trim();
+      const password = authPassword.value;
+      if (!username || !password) return;
+
+      authBtn.disabled = true;
+      authBtn.textContent = isRegisterMode ? "Registering..." : "Logging in...";
+
+      try {
+        const endpoint = isRegisterMode ? "/api/auth/register" : "/api/auth/login";
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          authError.textContent = data.error || "Something went wrong.";
+          return;
+        }
+        showDashboard(data.username);
+      } catch {
+        authError.textContent = "Network error.";
+      } finally {
+        authBtn.disabled = false;
+        authBtn.textContent = isRegisterMode ? "Register" : "Log In";
+      }
+    });
+
+    async function logout() {
+      await fetch("/api/auth/logout", { method: "POST" });
+      showAuth();
+      authForm.reset();
+    }
+
+    // Check if already logged in
+    async function checkAuth() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          showDashboard(data.username);
+        } else {
+          showAuth();
+        }
+      } catch {
+        showAuth();
+      }
+    }
+
+    // ── Dashboard logic ──────────────────────────────────────────────────
+
     const alertsBody = document.getElementById("alertsBody");
     const addForm = document.getElementById("addForm");
     const formError = document.getElementById("formError");
@@ -172,11 +317,11 @@
     }
 
     function fmt(val) {
-      return val != null ? "$" + Number(val).toFixed(2) : "—";
+      return val != null ? "$" + Number(val).toFixed(2) : "\u2014";
     }
 
     function fmtDate(iso) {
-      if (!iso) return "—";
+      if (!iso) return "\u2014";
       const d = new Date(iso);
       const mo = d.getMonth() + 1;
       const day = d.getDate();
@@ -196,7 +341,7 @@
 
     function editNotes(span, id) {
       const cell = span.parentElement;
-      const current = span.textContent === "—" ? "" : span.textContent;
+      const current = span.textContent === "\u2014" ? "" : span.textContent;
       cell.innerHTML = `
         <textarea maxlength="50" style="padding:4px;border:1px solid #4a6cf7;border-radius:4px;font-size:13px;width:140px;height:32px;resize:none;font-family:inherit;">${esc(current)}</textarea>
         <button class="btn-primary" style="padding:4px 8px;font-size:12px;margin-left:4px;" onclick="saveNotes('${id}', this)">Save</button>
@@ -249,6 +394,7 @@
     async function loadAlerts(skipPrices) {
       try {
         const res = await fetch("/api/alerts");
+        if (res.status === 401) { showAuth(); return; }
         const alerts = await res.json();
         if (alerts.length === 0) {
           alertsBody.innerHTML = '<tr><td colspan="10" class="empty">No alerts yet. Add one above.</td></tr>';
@@ -260,11 +406,11 @@
             <td class="mono">${a.id}</td>
             <td><strong>${a.symbol}</strong></td>
             <td>${a.name}</td>
-            <td class="price-cell" data-symbol="${a.symbol}" style="color:#888;">…</td>
+            <td class="price-cell" data-symbol="${a.symbol}" style="color:#888;">\u2026</td>
             <td>${fmt(a.abovePrice)}</td>
             <td>${fmt(a.belowPrice)}</td>
             <td class="notes-cell" data-id="${a.id}">
-              <span class="notes-display" onclick="editNotes(this, '${a.id}')" title="${a.notes ? esc(a.notes) : 'Click to edit'}" style="cursor:pointer;min-width:40px;display:inline-block;">${a.notes ? (a.notes.length > 15 ? esc(a.notes.slice(0, 15)) + '…' : esc(a.notes)) : '<em style="color:#bbb">—</em>'}</span>
+              <span class="notes-display" onclick="editNotes(this, '${a.id}')" title="${a.notes ? esc(a.notes) : 'Click to edit'}" style="cursor:pointer;min-width:40px;display:inline-block;">${a.notes ? (a.notes.length > 15 ? esc(a.notes.slice(0, 15)) + '\u2026' : esc(a.notes)) : '<em style="color:#bbb">\u2014</em>'}</span>
             </td>
             <td class="mono">${fmtDate(a.createdAt)}</td>
             <td><span class="badge ${a.enabled ? "badge-on" : "badge-off"}" onclick="toggleAlert('${a.id}', ${a.enabled})" style="cursor:pointer;" title="Click to toggle">${a.enabled ? "Enabled" : "Disabled"}</span></td>
@@ -332,7 +478,8 @@
       await loadAlerts();
     }
 
-    loadAlerts();
+    // ── Boot ──────────────────────────────────────────────────────────────
+    checkAuth();
   </script>
 </body>
 </html>

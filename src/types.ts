@@ -1,5 +1,13 @@
+export interface User {
+  id: string;
+  username: string;
+  passwordHash: string;
+  createdAt: string;
+}
+
 export interface StockAlert {
   id: string;
+  userId: string;
   symbol: string;
   name: string;
   abovePrice?: number;
@@ -18,6 +26,7 @@ export interface Settings {
 }
 
 export interface DbSchema {
+  users: User[];
   alerts: StockAlert[];
   settings: Settings;
 }
