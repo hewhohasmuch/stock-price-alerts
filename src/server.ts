@@ -5,7 +5,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   listAlerts, addAlert, removeAlert, setAlertEnabled, updateAlertNotes,
-  createUser, verifyUser,
+  updateAlertThresholds, createUser, verifyUser,
 } from "./db.js";
 import { fetchSinglePrice, fetchPrices } from "./services/price-fetcher.js";
 import { startScheduler } from "./scheduler.js";
@@ -285,6 +285,30 @@ app.patch("/api/alerts/:id/notes", requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to update notes" });
+  }
+});
+
+app.patch("/api/alerts/:id/thresholds", requireAuth, async (req, res) => {
+  try {
+    const { abovePrice, belowPrice } = req.body;
+    if (abovePrice == null && belowPrice == null) {
+      res.status(400).json({ error: "At least one of abovePrice or belowPrice required" });
+      return;
+    }
+    const above = abovePrice != null ? Number(abovePrice) : undefined;
+    const below = belowPrice != null ? Number(belowPrice) : undefined;
+    if ((above != null && isNaN(above)) || (below != null && isNaN(below))) {
+      res.status(400).json({ error: "Prices must be valid numbers" });
+      return;
+    }
+    const ok = await updateAlertThresholds(String(req.params.id), req.session.userId!, above, below);
+    if (!ok) {
+      res.status(404).json({ error: "Alert not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update thresholds" });
   }
 });
 

@@ -148,6 +148,21 @@ export async function updateAlertNotes(id: string, userId: string, notes: string
   return true;
 }
 
+export async function updateAlertThresholds(
+  id: string,
+  userId: string,
+  abovePrice: number | undefined,
+  belowPrice: number | undefined
+): Promise<boolean> {
+  const db = await getDb();
+  const alert = db.data.alerts.find((a) => a.id === id && a.userId === userId);
+  if (!alert) return false;
+  alert.abovePrice = abovePrice;
+  alert.belowPrice = belowPrice;
+  await db.write();
+  return true;
+}
+
 export async function updateLastNotified(id: string): Promise<void> {
   const db = await getDb();
   const alert = db.data.alerts.find((a) => a.id === id);

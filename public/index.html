@@ -404,6 +404,54 @@
       }
     }
 
+    function editThreshold(span, id, field) {
+      const cell = span.parentElement;
+      const current = span.textContent === "\u2014" ? "" : span.textContent.replace("$", "");
+      cell.innerHTML = `
+        <input type="number" step="0.01" value="${esc(current)}" style="padding:4px;border:1px solid #4a6cf7;border-radius:4px;font-size:13px;width:80px;">
+        <button class="btn-primary" style="padding:4px 8px;font-size:12px;margin-left:4px;" onclick="saveThreshold('${id}', '${field}', this)">Save</button>
+      `;
+      cell.querySelector("input").focus();
+    }
+
+    async function saveThreshold(id, field, btn) {
+      const cell = btn.parentElement;
+      const input = cell.querySelector("input");
+      const raw = input.value.trim();
+      const value = raw === "" ? null : Number(raw);
+      if (value !== null && isNaN(value)) return;
+
+      // Get the current alert to preserve the other threshold
+      const res = await fetch("/api/alerts");
+      if (!res.ok) return;
+      const alerts = await res.json();
+      const alert = alerts.find(a => a.id === id);
+      if (!alert) return;
+
+      const body = {
+        abovePrice: field === "above" ? value : (alert.abovePrice ?? null),
+        belowPrice: field === "below" ? value : (alert.belowPrice ?? null),
+      };
+      if (body.abovePrice == null && body.belowPrice == null) {
+        input.style.borderColor = "#e74c3c";
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "...";
+      try {
+        await fetch(`/api/alerts/${id}/thresholds`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        await loadAlerts();
+      } catch {
+        btn.disabled = false;
+        btn.textContent = "Save";
+      }
+    }
+
     async function loadPrices() {
       const cells = document.querySelectorAll(".price-cell");
       const symbols = [...new Set([...cells].map(c => c.dataset.symbol))];
@@ -453,8 +501,8 @@
             <td data-label="Symbol"><strong>${a.symbol}</strong></td>
             <td data-label="Name" class="name-cell" data-symbol="${a.symbol}">${nameCache[a.symbol] && nameCache[a.symbol] !== a.symbol ? esc(nameCache[a.symbol]) : esc(a.name)}</td>
             <td data-label="Price" class="price-cell" data-symbol="${a.symbol}" style="color:#888;">\u2026</td>
-            <td data-label="Above">${fmt(a.abovePrice)}</td>
-            <td data-label="Below">${fmt(a.belowPrice)}</td>
+            <td data-label="Above"><span onclick="editThreshold(this, '${a.id}', 'above')" style="cursor:pointer;" title="Click to edit">${fmt(a.abovePrice)}</span></td>
+            <td data-label="Below"><span onclick="editThreshold(this, '${a.id}', 'below')" style="cursor:pointer;" title="Click to edit">${fmt(a.belowPrice)}</span></td>
             <td data-label="Notes" class="notes-cell" data-id="${a.id}">
               <span class="notes-display" onclick="editNotes(this, '${a.id}')" title="${a.notes ? esc(a.notes) : 'Click to edit'}" style="cursor:pointer;min-width:40px;display:inline-block;">${a.notes ? (a.notes.length > 15 ? esc(a.notes.slice(0, 15)) + '\u2026' : esc(a.notes)) : '<em style="color:#bbb">\u2014</em>'}</span>
             </td>
