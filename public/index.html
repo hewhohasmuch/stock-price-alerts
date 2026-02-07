@@ -152,7 +152,6 @@
       <table>
         <thead>
           <tr>
-            <th>ID</th>
             <th class="sortable" onclick="setSort('symbol')">Symbol<span class="sort-arrow" id="sort-symbol"></span></th>
             <th class="sortable" onclick="setSort('name')">Name<span class="sort-arrow" id="sort-name"></span></th>
             <th class="sortable" onclick="setSort('price')">Price<span class="sort-arrow" id="sort-price"></span></th>
@@ -165,7 +164,7 @@
           </tr>
         </thead>
         <tbody id="alertsBody">
-          <tr><td colspan="10" class="empty">Loading...</td></tr>
+          <tr><td colspan="9" class="empty">Loading...</td></tr>
         </tbody>
       </table>
     </div>
@@ -408,13 +407,12 @@
         if (res.status === 401) { showAuth(); return; }
         const alerts = await res.json();
         if (alerts.length === 0) {
-          alertsBody.innerHTML = '<tr><td colspan="10" class="empty">No alerts yet. Add one above.</td></tr>';
+          alertsBody.innerHTML = '<tr><td colspan="9" class="empty">No alerts yet. Add one above.</td></tr>';
           return;
         }
         const sorted = sortAlerts(alerts);
         alertsBody.innerHTML = sorted.map(a => `
           <tr>
-            <td class="mono">${a.id}</td>
             <td><strong>${a.symbol}</strong></td>
             <td class="name-cell" data-symbol="${a.symbol}">${nameCache[a.symbol] && nameCache[a.symbol] !== a.symbol ? esc(nameCache[a.symbol]) : esc(a.name)}</td>
             <td class="price-cell" data-symbol="${a.symbol}" style="color:#888;">\u2026</td>
