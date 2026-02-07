@@ -1,12 +1,17 @@
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mkdirSync } from "node:fs";
 import { JSONFilePreset } from "lowdb/node";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import type { DbSchema, StockAlert, Settings, User } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = join(__dirname, "..", "data", "db.json");
+const DATA_DIR = join(__dirname, "..", "data");
+const DB_PATH = join(DATA_DIR, "db.json");
+
+// Ensure the data directory exists before lowdb tries to write
+mkdirSync(DATA_DIR, { recursive: true });
 
 const defaultSettings: Settings = {
   checkIntervalCron: "*/5 * * * *",
