@@ -8,6 +8,7 @@ import {
   createUser, verifyUser,
 } from "./db.js";
 import { fetchSinglePrice, fetchPrices } from "./services/price-fetcher.js";
+import { startScheduler } from "./scheduler.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -328,4 +329,5 @@ app.get("/api/price/:symbol", requireAuth, async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Dashboard running at http://localhost:${PORT}`);
+  startScheduler();
 });

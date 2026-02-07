@@ -41,21 +41,28 @@ function timestamp(): string {
   return new Date().toLocaleTimeString();
 }
 
-// Startup
-console.log("Stock Price Alert Scheduler");
-console.log("==========================");
-console.log(`Schedule: ${config.checkIntervalCron}`);
-console.log(`Cooldown: ${config.cooldownMinutes} minutes`);
-console.log(`Email:    ${isEmailConfigured() ? "configured" : "not configured"}`);
-console.log(`SMS:      ${isSmsConfigured() ? "configured" : "not configured"}`);
-console.log();
+export function startScheduler(): void {
+  console.log("Stock Price Alert Scheduler");
+  console.log("==========================");
+  console.log(`Schedule: ${config.checkIntervalCron}`);
+  console.log(`Cooldown: ${config.cooldownMinutes} minutes`);
+  console.log(`Email:    ${isEmailConfigured() ? "configured" : "not configured"}`);
+  console.log(`SMS:      ${isSmsConfigured() ? "configured" : "not configured"}`);
+  console.log();
 
-// Run immediately on start
-checkPrices();
-
-// Then schedule recurring checks
-cron.schedule(config.checkIntervalCron, () => {
+  // Run immediately on start
   checkPrices();
-});
 
-console.log("Scheduler running. Press Ctrl+C to stop.\n");
+  // Then schedule recurring checks
+  cron.schedule(config.checkIntervalCron, () => {
+    checkPrices();
+  });
+
+  console.log("Scheduler running.\n");
+}
+
+// Allow standalone execution: npx tsx src/scheduler.ts
+const isDirectRun = process.argv[1]?.includes("scheduler");
+if (isDirectRun) {
+  startScheduler();
+}
