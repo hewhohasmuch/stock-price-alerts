@@ -306,7 +306,7 @@
     const formError = document.getElementById("formError");
     const addBtn = document.getElementById("addBtn");
 
-    let sortCol = null;
+    let sortCol = "symbol";
     let sortAsc = true;
     let priceCache = {};
     let nameCache = {};
@@ -524,6 +524,7 @@
     }
 
     // ── Boot ──────────────────────────────────────────────────────────────
+    updateSortArrows();
     checkAuth();
 
     // Auto-refresh prices every 60 seconds
