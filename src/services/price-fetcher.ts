@@ -5,9 +5,6 @@ const yf = new YahooFinance({
   queue: { concurrency: 1, timeout: 60 },
 });
 
-// Suppress the one-time survey notice
-yf.suppressNotices(["yahooSurvey"]);
-
 // Cache to avoid redundant fetches within a short window
 let cache: { data: PriceResult[]; symbols: string; ts: number } | null = null;
 const CACHE_TTL_MS = 30_000; // 30 seconds
