@@ -8,7 +8,7 @@ import { notify } from "./services/notifier.js";
 async function checkPrices(): Promise<void> {
   const alerts = await getEnabledAlerts();
   if (alerts.length === 0) {
-    console.log(`[${timestamp()}] No enabled alerts. Add some with: npx tsx src/cli.ts add <SYMBOL> --above <price>`);
+    console.log(`[${timestamp()}] No enabled alerts. Add some with: npm run cli -- add <SYMBOL> --above <price>`);
     return;
   }
 
