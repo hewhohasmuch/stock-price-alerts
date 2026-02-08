@@ -1,5 +1,6 @@
 import express from "express";
 import session from "express-session";
+import FileStoreFactory from "session-file-store";
 import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,8 @@ import {
 } from "./db.js";
 import { fetchSinglePrice, fetchPrices } from "./services/price-fetcher.js";
 import { startScheduler } from "./scheduler.js";
+
+const FileStore = FileStoreFactory(session);
 
 declare module "express-session" {
   interface SessionData {
@@ -34,16 +37,19 @@ if (!sessionSecret) {
 }
 const resolvedSecret = sessionSecret || randomUUID();
 
-// ── In-memory session store warning ──────────────────────────────────────
-if (isProduction) {
-  console.warn("WARNING: Using default in-memory session store. Sessions will be lost on restart and memory may leak under load.");
-  console.warn("Consider using a persistent session store (e.g. connect-pg-simple, connect-redis) in production.");
-}
+// ── Persistent session store ─────────────────────────────────────────────
+const sessionStorePath = join(__dirname, "..", "data", "sessions");
 
 app.use(express.json());
 
 app.use(
   session({
+    store: new FileStore({
+      path: sessionStorePath,
+      ttl: 7 * 24 * 60 * 60, // 7 days in seconds
+      retries: 1,
+      logFn: () => {},        // suppress verbose file-store logs
+    }),
     secret: resolvedSecret,
     resave: false,
     saveUninitialized: false,
@@ -63,43 +69,47 @@ if (isProduction) {
 
 app.use(express.static(join(__dirname, "..", "public")));
 
-// ── Rate limiting for auth endpoints ─────────────────────────────────────
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const RATE_LIMIT_MAX = 10; // max attempts per window
+// ── Rate limiting ────────────────────────────────────────────────────────
+const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const AUTH_RATE_MAX = 10; // max auth attempts per window
+const API_RATE_WINDOW_MS = 60 * 1000;       // 1 minute
+const API_RATE_MAX = 60;                     // max API calls per window per user
 
-function rateLimitAuth(
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction
-) {
-  const key = req.ip || "unknown";
+// Clean up expired rate-limit entries every 5 minutes
+setInterval(() => {
   const now = Date.now();
-  const entry = loginAttempts.get(key);
-
-  if (entry && now < entry.resetAt) {
-    if (entry.count >= RATE_LIMIT_MAX) {
-      const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
-      res.status(429).json({
-        error: "Too many attempts. Please try again later.",
-        retryAfterSeconds: retryAfter,
-      });
-      return;
-    }
-    entry.count++;
-  } else {
-    loginAttempts.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+  for (const [k, v] of rateLimitBuckets) {
+    if (now >= v.resetAt) rateLimitBuckets.delete(k);
   }
+}, 5 * 60 * 1000).unref();
 
-  // Periodically clean up expired entries to prevent memory buildup
-  if (loginAttempts.size > 10000) {
-    for (const [k, v] of loginAttempts) {
-      if (now >= v.resetAt) loginAttempts.delete(k);
+function rateLimit(prefix: string, windowMs: number, max: number) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const key = `${prefix}:${req.ip || "unknown"}`;
+    const now = Date.now();
+    const entry = rateLimitBuckets.get(key);
+
+    if (entry && now < entry.resetAt) {
+      if (entry.count >= max) {
+        const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+        res.status(429).json({
+          error: "Too many requests. Please try again later.",
+          retryAfterSeconds: retryAfter,
+        });
+        return;
+      }
+      entry.count++;
+    } else {
+      rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
     }
-  }
 
-  next();
+    next();
+  };
 }
+
+const rateLimitAuth = rateLimit("auth", AUTH_RATE_WINDOW_MS, AUTH_RATE_MAX);
+const rateLimitApi = rateLimit("api", API_RATE_WINDOW_MS, API_RATE_MAX);
 
 // ── Auth routes ─────────────────────────────────────────────────────────
 
@@ -312,9 +322,9 @@ app.patch("/api/alerts/:id/thresholds", requireAuth, async (req, res) => {
   }
 });
 
-// ── Price routes (protected) ────────────────────────────────────────────
+// ── Price routes (protected + rate-limited) ─────────────────────────────
 
-app.get("/api/prices", requireAuth, async (req, res) => {
+app.get("/api/prices", requireAuth, rateLimitApi, async (req, res) => {
   try {
     const raw = req.query.symbols;
     if (typeof raw !== "string" || !raw.trim()) {
@@ -338,7 +348,7 @@ app.get("/api/prices", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/price/:symbol", requireAuth, async (req, res) => {
+app.get("/api/price/:symbol", requireAuth, rateLimitApi, async (req, res) => {
   try {
     const symbol = String(req.params.symbol);
     const result = await fetchSinglePrice(symbol);

@@ -52,7 +52,7 @@ export async function createUser(username: string, password: string): Promise<Us
   }
   const passwordHash = await bcrypt.hash(password, 10);
   const user: User = {
-    id: randomUUID().slice(0, 8),
+    id: randomUUID(),
     username,
     passwordHash,
     createdAt: new Date().toISOString(),
@@ -96,7 +96,7 @@ export async function addAlert(
 ): Promise<StockAlert> {
   const db = await getDb();
   const alert: StockAlert = {
-    id: randomUUID().slice(0, 8),
+    id: randomUUID(),
     userId,
     symbol: symbol.toUpperCase(),
     name,
