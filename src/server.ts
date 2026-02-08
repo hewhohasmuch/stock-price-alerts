@@ -1,5 +1,6 @@
 import express from "express";
 import session from "express-session";
+import sessionFileStoreFactory from "session-file-store";
 import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,16 +35,20 @@ if (!sessionSecret) {
 }
 const resolvedSecret = sessionSecret || randomUUID();
 
-// ── In-memory session store warning ──────────────────────────────────────
-if (isProduction) {
-  console.warn("WARNING: Using default in-memory session store. Sessions will be lost on restart and memory may leak under load.");
-  console.warn("Consider using a persistent session store (e.g. connect-pg-simple, connect-redis) in production.");
-}
+// ── File-based session store ─────────────────────────────────────────────
+const FileStore = sessionFileStoreFactory(session);
+const sessionStorePath = join(__dirname, "..", "data", "sessions");
 
 app.use(express.json());
 
 app.use(
   session({
+    store: new FileStore({
+      path: sessionStorePath,
+      ttl: 7 * 24 * 60 * 60, // 7 days in seconds (matches cookie maxAge)
+      retries: 1,
+      logFn: () => {},        // silence verbose file-store logging
+    }),
     secret: resolvedSecret,
     resave: false,
     saveUninitialized: false,
@@ -354,5 +359,10 @@ app.get("/api/price/:symbol", requireAuth, async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Dashboard running at http://localhost:${PORT}`);
-  startScheduler();
+  try {
+    startScheduler();
+  } catch (err) {
+    console.error("Failed to start scheduler:", (err as Error).message);
+    console.error("The web dashboard will continue running without automatic price checks.");
+  }
 });
