@@ -1,10 +1,11 @@
 import express from "express";
 import session from "express-session";
-import sessionFileStoreFactory from "session-file-store";
+import connectPgSimple from "connect-pg-simple";
 import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  initDb, pool,
   listAlerts, addAlert, removeAlert, setAlertEnabled, updateAlertNotes,
   updateAlertThresholds, createUser, verifyUser,
 } from "./db.js";
@@ -35,19 +36,16 @@ if (!sessionSecret) {
 }
 const resolvedSecret = sessionSecret || randomUUID();
 
-// ── File-based session store ─────────────────────────────────────────────
-const FileStore = sessionFileStoreFactory(session);
-const sessionStorePath = join(__dirname, "..", "data", "sessions");
+// ── PostgreSQL session store ─────────────────────────────────────────────
+const PgStore = connectPgSimple(session);
 
 app.use(express.json());
 
 app.use(
   session({
-    store: new FileStore({
-      path: sessionStorePath,
-      ttl: 7 * 24 * 60 * 60, // 7 days in seconds (matches cookie maxAge)
-      retries: 1,
-      logFn: () => {},        // silence verbose file-store logging
+    store: new PgStore({
+      pool,
+      createTableIfMissing: true,
     }),
     secret: resolvedSecret,
     resave: false,
@@ -357,12 +355,19 @@ app.get("/api/price/:symbol", requireAuth, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Dashboard running at http://localhost:${PORT}`);
-  try {
-    startScheduler();
-  } catch (err) {
-    console.error("Failed to start scheduler:", (err as Error).message);
-    console.error("The web dashboard will continue running without automatic price checks.");
-  }
-});
+initDb()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Dashboard running at http://localhost:${PORT}`);
+      try {
+        startScheduler();
+      } catch (err) {
+        console.error("Failed to start scheduler:", (err as Error).message);
+        console.error("The web dashboard will continue running without automatic price checks.");
+      }
+    });
+  })
+  .catch((err) => {
+    console.error("FATAL: Failed to initialize database:", (err as Error).message);
+    process.exit(1);
+  });

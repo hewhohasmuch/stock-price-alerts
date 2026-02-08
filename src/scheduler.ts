@@ -64,5 +64,7 @@ export function startScheduler(): void {
 // Allow standalone execution: npx tsx src/scheduler.ts
 const isDirectRun = process.argv[1]?.includes("scheduler");
 if (isDirectRun) {
+  const { initDb } = await import("./db.js");
+  await initDb();
   startScheduler();
 }
