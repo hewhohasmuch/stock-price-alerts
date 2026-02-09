@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 export const config = {
+  databaseUrl: process.env.DATABASE_URL || "postgresql://localhost:5432/stock_alerts",
   smtp: {
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 587),

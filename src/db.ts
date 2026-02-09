@@ -1,90 +1,112 @@
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { mkdirSync } from "node:fs";
-import { JSONFilePreset } from "lowdb/node";
+import pg from "pg";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
-import type { DbSchema, StockAlert, Settings, User } from "./types.js";
+import { config } from "./config.js";
+import type { StockAlert, Settings, User } from "./types.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, "..", "data");
-const DB_PATH = join(DATA_DIR, "db.json");
+const pool = new pg.Pool({ connectionString: config.databaseUrl });
 
-// Ensure the data directory exists before lowdb tries to write
-mkdirSync(DATA_DIR, { recursive: true });
+// ── Schema initialization ────────────────────────────────────────────────
 
-const defaultSettings: Settings = {
-  checkIntervalCron: "*/5 * * * *",
-  cooldownMinutes: 60,
-  notifyEmail: true,
-  notifySms: true,
-};
+export async function initDb(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id           TEXT PRIMARY KEY,
+      username     TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
 
-const defaultData: DbSchema = {
-  users: [],
-  alerts: [],
-  settings: defaultSettings,
-};
-
-let dbInstance: Awaited<ReturnType<typeof JSONFilePreset<DbSchema>>> | null = null;
-
-async function getDb() {
-  if (!dbInstance) {
-    dbInstance = await JSONFilePreset<DbSchema>(DB_PATH, defaultData);
-    // Ensure users array exists for databases created before auth was added
-    if (!dbInstance.data.users) {
-      dbInstance.data.users = [];
-      await dbInstance.write();
-    }
-  }
-  return dbInstance;
+    CREATE TABLE IF NOT EXISTS alerts (
+      id              TEXT PRIMARY KEY,
+      user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      symbol          TEXT NOT NULL,
+      name            TEXT NOT NULL,
+      above_price     DOUBLE PRECISION,
+      below_price     DOUBLE PRECISION,
+      notes           TEXT,
+      enabled         BOOLEAN NOT NULL DEFAULT true,
+      last_notified_at TIMESTAMPTZ,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }
 
 // ── User functions ──────────────────────────────────────────────────────
 
 export async function createUser(username: string, password: string): Promise<User> {
-  const db = await getDb();
-  const existing = db.data.users.find(
-    (u) => u.username.toLowerCase() === username.toLowerCase()
-  );
-  if (existing) {
-    throw new Error("Username already taken");
-  }
+  const id = randomUUID().slice(0, 8);
   const passwordHash = await bcrypt.hash(password, 10);
-  const user: User = {
-    id: randomUUID().slice(0, 8),
-    username,
-    passwordHash,
-    createdAt: new Date().toISOString(),
-  };
-  db.data.users.push(user);
-  await db.write();
-  return user;
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO users (id, username, password_hash)
+       VALUES ($1, $2, $3)
+       RETURNING id, username, password_hash AS "passwordHash", created_at AS "createdAt"`,
+      [id, username, passwordHash],
+    );
+    return { ...rows[0], createdAt: rows[0].createdAt.toISOString() };
+  } catch (err: any) {
+    if (err.code === "23505") throw new Error("Username already taken");
+    throw err;
+  }
 }
 
 export async function verifyUser(username: string, password: string): Promise<User | null> {
-  const db = await getDb();
-  const user = db.data.users.find(
-    (u) => u.username.toLowerCase() === username.toLowerCase()
+  const { rows } = await pool.query(
+    `SELECT id, username, password_hash AS "passwordHash", created_at AS "createdAt"
+     FROM users WHERE LOWER(username) = LOWER($1)`,
+    [username],
   );
-  if (!user) return null;
+  if (rows.length === 0) return null;
+  const user = rows[0];
   const valid = await bcrypt.compare(password, user.passwordHash);
-  return valid ? user : null;
+  if (!valid) return null;
+  return { ...user, createdAt: user.createdAt.toISOString() };
 }
 
 export async function findUserById(id: string): Promise<User | null> {
-  const db = await getDb();
-  return db.data.users.find((u) => u.id === id) ?? null;
+  const { rows } = await pool.query(
+    `SELECT id, username, password_hash AS "passwordHash", created_at AS "createdAt"
+     FROM users WHERE id = $1`,
+    [id],
+  );
+  if (rows.length === 0) return null;
+  return { ...rows[0], createdAt: rows[0].createdAt.toISOString() };
 }
 
 export async function findUserByUsername(username: string): Promise<User | null> {
-  const db = await getDb();
-  return db.data.users.find(
-    (u) => u.username.toLowerCase() === username.toLowerCase()
-  ) ?? null;
+  const { rows } = await pool.query(
+    `SELECT id, username, password_hash AS "passwordHash", created_at AS "createdAt"
+     FROM users WHERE LOWER(username) = LOWER($1)`,
+    [username],
+  );
+  if (rows.length === 0) return null;
+  return { ...rows[0], createdAt: rows[0].createdAt.toISOString() };
 }
 
 // ── Alert functions ─────────────────────────────────────────────────────
+
+function rowToAlert(row: any): StockAlert {
+  return {
+    id: row.id,
+    userId: row.userId,
+    symbol: row.symbol,
+    name: row.name,
+    abovePrice: row.abovePrice ?? undefined,
+    belowPrice: row.belowPrice ?? undefined,
+    notes: row.notes ?? undefined,
+    enabled: row.enabled,
+    lastNotifiedAt: row.lastNotifiedAt ? row.lastNotifiedAt.toISOString() : undefined,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+const ALERT_COLUMNS = `
+  id, user_id AS "userId", symbol, name,
+  above_price AS "abovePrice", below_price AS "belowPrice",
+  notes, enabled, last_notified_at AS "lastNotifiedAt",
+  created_at AS "createdAt"
+`;
 
 export async function addAlert(
   userId: string,
@@ -92,87 +114,84 @@ export async function addAlert(
   name: string,
   abovePrice?: number,
   belowPrice?: number,
-  notes?: string
+  notes?: string,
 ): Promise<StockAlert> {
-  const db = await getDb();
-  const alert: StockAlert = {
-    id: randomUUID().slice(0, 8),
-    userId,
-    symbol: symbol.toUpperCase(),
-    name,
-    abovePrice,
-    belowPrice,
-    notes,
-    enabled: true,
-    createdAt: new Date().toISOString(),
-  };
-  db.data.alerts.push(alert);
-  await db.write();
-  return alert;
+  const id = randomUUID().slice(0, 8);
+  const { rows } = await pool.query(
+    `INSERT INTO alerts (id, user_id, symbol, name, above_price, below_price, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING ${ALERT_COLUMNS}`,
+    [id, userId, symbol.toUpperCase(), name, abovePrice ?? null, belowPrice ?? null, notes ?? null],
+  );
+  return rowToAlert(rows[0]);
 }
 
 export async function removeAlert(id: string, userId: string): Promise<boolean> {
-  const db = await getDb();
-  const idx = db.data.alerts.findIndex((a) => a.id === id && a.userId === userId);
-  if (idx === -1) return false;
-  db.data.alerts.splice(idx, 1);
-  await db.write();
-  return true;
+  const { rowCount } = await pool.query(
+    `DELETE FROM alerts WHERE id = $1 AND user_id = $2`,
+    [id, userId],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 export async function listAlerts(userId: string): Promise<StockAlert[]> {
-  const db = await getDb();
-  return db.data.alerts.filter((a) => a.userId === userId);
+  const { rows } = await pool.query(
+    `SELECT ${ALERT_COLUMNS} FROM alerts WHERE user_id = $1`,
+    [userId],
+  );
+  return rows.map(rowToAlert);
 }
 
 export async function getEnabledAlerts(): Promise<StockAlert[]> {
-  const db = await getDb();
-  return db.data.alerts.filter((a) => a.enabled);
+  const { rows } = await pool.query(
+    `SELECT ${ALERT_COLUMNS} FROM alerts WHERE enabled = true`,
+  );
+  return rows.map(rowToAlert);
 }
 
 export async function setAlertEnabled(id: string, userId: string, enabled: boolean): Promise<boolean> {
-  const db = await getDb();
-  const alert = db.data.alerts.find((a) => a.id === id && a.userId === userId);
-  if (!alert) return false;
-  alert.enabled = enabled;
-  await db.write();
-  return true;
+  const { rowCount } = await pool.query(
+    `UPDATE alerts SET enabled = $1 WHERE id = $2 AND user_id = $3`,
+    [enabled, id, userId],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 export async function updateAlertNotes(id: string, userId: string, notes: string): Promise<boolean> {
-  const db = await getDb();
-  const alert = db.data.alerts.find((a) => a.id === id && a.userId === userId);
-  if (!alert) return false;
-  alert.notes = notes;
-  await db.write();
-  return true;
+  const { rowCount } = await pool.query(
+    `UPDATE alerts SET notes = $1 WHERE id = $2 AND user_id = $3`,
+    [notes, id, userId],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 export async function updateAlertThresholds(
   id: string,
   userId: string,
   abovePrice: number | undefined,
-  belowPrice: number | undefined
+  belowPrice: number | undefined,
 ): Promise<boolean> {
-  const db = await getDb();
-  const alert = db.data.alerts.find((a) => a.id === id && a.userId === userId);
-  if (!alert) return false;
-  alert.abovePrice = abovePrice;
-  alert.belowPrice = belowPrice;
-  await db.write();
-  return true;
+  const { rowCount } = await pool.query(
+    `UPDATE alerts SET above_price = $1, below_price = $2 WHERE id = $3 AND user_id = $4`,
+    [abovePrice ?? null, belowPrice ?? null, id, userId],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 export async function updateLastNotified(id: string): Promise<void> {
-  const db = await getDb();
-  const alert = db.data.alerts.find((a) => a.id === id);
-  if (alert) {
-    alert.lastNotifiedAt = new Date().toISOString();
-    await db.write();
-  }
+  await pool.query(
+    `UPDATE alerts SET last_notified_at = now() WHERE id = $1`,
+    [id],
+  );
 }
 
 export async function getSettings(): Promise<Settings> {
-  const db = await getDb();
-  return db.data.settings;
+  return {
+    checkIntervalCron: config.checkIntervalCron,
+    cooldownMinutes: config.cooldownMinutes,
+    notifyEmail: true,
+    notifySms: true,
+  };
 }
+
+export { pool };

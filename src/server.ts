@@ -1,9 +1,11 @@
 import express from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  initDb, pool,
   listAlerts, addAlert, removeAlert, setAlertEnabled, updateAlertNotes,
   updateAlertThresholds, createUser, verifyUser,
 } from "./db.js";
@@ -34,16 +36,17 @@ if (!sessionSecret) {
 }
 const resolvedSecret = sessionSecret || randomUUID();
 
-// ── In-memory session store warning ──────────────────────────────────────
-if (isProduction) {
-  console.warn("WARNING: Using default in-memory session store. Sessions will be lost on restart and memory may leak under load.");
-  console.warn("Consider using a persistent session store (e.g. connect-pg-simple, connect-redis) in production.");
-}
+// ── PostgreSQL session store ─────────────────────────────────────────────
+const PgStore = connectPgSimple(session);
 
 app.use(express.json());
 
 app.use(
   session({
+    store: new PgStore({
+      pool,
+      createTableIfMissing: true,
+    }),
     secret: resolvedSecret,
     resave: false,
     saveUninitialized: false,
@@ -352,7 +355,19 @@ app.get("/api/price/:symbol", requireAuth, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Dashboard running at http://localhost:${PORT}`);
-  startScheduler();
-});
+initDb()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Dashboard running at http://localhost:${PORT}`);
+      try {
+        startScheduler();
+      } catch (err) {
+        console.error("Failed to start scheduler:", (err as Error).message);
+        console.error("The web dashboard will continue running without automatic price checks.");
+      }
+    });
+  })
+  .catch((err) => {
+    console.error("FATAL: Failed to initialize database:", (err as Error).message);
+    process.exit(1);
+  });

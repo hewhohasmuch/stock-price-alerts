@@ -1,6 +1,8 @@
 import { Command } from "commander";
-import { addAlert, removeAlert, listAlerts, setAlertEnabled, createUser, findUserByUsername } from "./db.js";
+import { initDb, addAlert, removeAlert, listAlerts, setAlertEnabled, createUser, findUserByUsername } from "./db.js";
 import { fetchSinglePrice } from "./services/price-fetcher.js";
+
+await initDb();
 
 const program = new Command();
 

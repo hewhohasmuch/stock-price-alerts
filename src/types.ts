@@ -25,12 +25,6 @@ export interface Settings {
   notifySms: boolean;
 }
 
-export interface DbSchema {
-  users: User[];
-  alerts: StockAlert[];
-  settings: Settings;
-}
-
 export interface PriceResult {
   symbol: string;
   price: number;
