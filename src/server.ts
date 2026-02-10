@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  initDb, pool,
+  initDb, pool, checkRateLimit,
   listAlerts, addAlert, removeAlert, setAlertEnabled, updateAlertNotes,
   updateAlertThresholds, createUser, verifyUser,
 } from "./db.js";
@@ -67,41 +67,27 @@ if (isProduction) {
 app.use(express.static(join(__dirname, "..", "public")));
 
 // ── Rate limiting for auth endpoints ─────────────────────────────────────
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const RATE_LIMIT_MAX = 10; // max attempts per window
 
-function rateLimitAuth(
+async function rateLimitAuth(
   req: express.Request,
   res: express.Response,
   next: express.NextFunction
 ) {
-  const key = req.ip || "unknown";
-  const now = Date.now();
-  const entry = loginAttempts.get(key);
-
-  if (entry && now < entry.resetAt) {
-    if (entry.count >= RATE_LIMIT_MAX) {
-      const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+  try {
+    const ip = req.ip || "unknown";
+    const result = await checkRateLimit(ip);
+    if (!result.allowed) {
       res.status(429).json({
         error: "Too many attempts. Please try again later.",
-        retryAfterSeconds: retryAfter,
+        retryAfterSeconds: result.retryAfterSeconds,
       });
       return;
     }
-    entry.count++;
-  } else {
-    loginAttempts.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    next();
+  } catch (err) {
+    console.error("Rate limit check failed:", (err as Error).message);
+    next(); // allow request through if rate limit check fails
   }
-
-  // Periodically clean up expired entries to prevent memory buildup
-  if (loginAttempts.size > 10000) {
-    for (const [k, v] of loginAttempts) {
-      if (now >= v.resetAt) loginAttempts.delete(k);
-    }
-  }
-
-  next();
 }
 
 // ── Auth routes ─────────────────────────────────────────────────────────

@@ -17,6 +17,12 @@ export async function initDb(): Promise<void> {
       created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
+    CREATE TABLE IF NOT EXISTS login_attempts (
+      ip             TEXT PRIMARY KEY,
+      attempt_count  INTEGER NOT NULL DEFAULT 1,
+      window_start   TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
     CREATE TABLE IF NOT EXISTS alerts (
       id              TEXT PRIMARY KEY,
       user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -30,6 +36,41 @@ export async function initDb(): Promise<void> {
       created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+}
+
+// ── Rate limiting ───────────────────────────────────────────────────────
+
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const RATE_LIMIT_MAX = 10;
+
+export async function checkRateLimit(ip: string): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
+  const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
+
+  // Upsert: reset if window expired, otherwise increment
+  const { rows } = await pool.query(
+    `INSERT INTO login_attempts (ip, attempt_count, window_start)
+     VALUES ($1, 1, now())
+     ON CONFLICT (ip) DO UPDATE SET
+       attempt_count = CASE
+         WHEN login_attempts.window_start < $2 THEN 1
+         ELSE login_attempts.attempt_count + 1
+       END,
+       window_start = CASE
+         WHEN login_attempts.window_start < $2 THEN now()
+         ELSE login_attempts.window_start
+       END
+     RETURNING attempt_count, window_start`,
+    [ip, windowStart],
+  );
+
+  const row = rows[0];
+  if (row.attempt_count > RATE_LIMIT_MAX) {
+    const windowEnd = new Date(row.window_start).getTime() + RATE_LIMIT_WINDOW_MS;
+    const retryAfterSeconds = Math.ceil((windowEnd - Date.now()) / 1000);
+    return { allowed: false, retryAfterSeconds: Math.max(retryAfterSeconds, 1) };
+  }
+
+  return { allowed: true };
 }
 
 // ── User functions ──────────────────────────────────────────────────────
