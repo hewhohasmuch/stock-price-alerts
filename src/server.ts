@@ -36,6 +36,11 @@ if (!sessionSecret) {
 }
 const resolvedSecret = sessionSecret || randomUUID();
 
+// ── Trust proxy (must precede session so req.ip and secure cookies work) ─
+if (isProduction) {
+  app.set("trust proxy", 1);
+}
+
 // ── PostgreSQL session store ─────────────────────────────────────────────
 const PgStore = connectPgSimple(session);
 
@@ -59,10 +64,6 @@ app.use(
     },
   })
 );
-
-if (isProduction) {
-  app.set("trust proxy", 1);
-}
 
 app.use(express.static(join(__dirname, "..", "public")));
 
