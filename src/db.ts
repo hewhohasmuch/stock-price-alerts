@@ -4,9 +4,14 @@ import bcrypt from "bcryptjs";
 import { config } from "./config.js";
 import type { StockAlert, Settings, User } from "./types.js";
 
+const isLocal = config.databaseUrl.includes("localhost");
+const dbUrl = !isLocal && !config.databaseUrl.includes("sslmode=")
+  ? config.databaseUrl + (config.databaseUrl.includes("?") ? "&" : "?") + "sslmode=require"
+  : config.databaseUrl;
+
 const pool = new pg.Pool({
-  connectionString: config.databaseUrl,
-  ssl: config.databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false },
+  connectionString: dbUrl,
+  ssl: isLocal ? false : { rejectUnauthorized: false },
 });
 
 // ── Schema initialization ────────────────────────────────────────────────
