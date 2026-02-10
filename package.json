@@ -4,9 +4,9 @@
   "description": "CLI tool that monitors stock prices and sends email/SMS alerts when prices cross user-defined thresholds",
   "type": "module",
   "scripts": {
-    "start": "tsx src/scheduler.ts",
-    "cli": "tsx src/cli.ts",
-    "web": "tsx src/server.ts"
+    "start": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx src/scheduler.ts",
+    "cli": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx src/cli.ts",
+    "web": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx src/server.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
