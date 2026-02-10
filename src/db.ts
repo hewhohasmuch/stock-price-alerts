@@ -4,7 +4,10 @@ import bcrypt from "bcryptjs";
 import { config } from "./config.js";
 import type { StockAlert, Settings, User } from "./types.js";
 
-const pool = new pg.Pool({ connectionString: config.databaseUrl });
+const pool = new pg.Pool({
+  connectionString: config.databaseUrl,
+  ssl: config.databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false },
+});
 
 // ── Schema initialization ────────────────────────────────────────────────
 
