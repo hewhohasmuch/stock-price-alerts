@@ -5,6 +5,11 @@ import { config } from "./config.js";
 import type { StockAlert, Settings, User } from "./types.js";
 
 const isLocal = /localhost|127\.0\.0\.1/.test(config.databaseUrl);
+const sslConfig = isLocal ? false : { rejectUnauthorized: false };
+
+// Debug: confirm SSL settings at startup
+const maskedUrl = config.databaseUrl.replace(/:([^@]+)@/, ":***@");
+console.log(`DB connection: isLocal=${isLocal}, ssl=${JSON.stringify(sslConfig)}, url=${maskedUrl}`);
 
 if (!isLocal) {
   process.env.PGSSLMODE = "require";
@@ -12,7 +17,7 @@ if (!isLocal) {
 
 const pool = new pg.Pool({
   connectionString: config.databaseUrl,
-  ssl: isLocal ? false : { rejectUnauthorized: false },
+  ssl: sslConfig,
 });
 
 // ── Schema initialization ────────────────────────────────────────────────
