@@ -87,7 +87,7 @@ async function rateLimitAuth(
     next();
   } catch (err) {
     console.error("Rate limit check failed:", (err as Error).message);
-    next(); // allow request through if rate limit check fails
+    res.status(503).json({ error: "Service temporarily unavailable. Please try again later." });
   }
 }
 
