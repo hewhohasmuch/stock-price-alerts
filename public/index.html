@@ -5,11 +5,58 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Stock Price Alert Dashboard</title>
   <style>
+    :root {
+      --bg: #f5f7fa;
+      --surface: #fff;
+      --text: #333;
+      --text-secondary: #666;
+      --text-muted: #888;
+      --text-faint: #999;
+      --text-heading: #555;
+      --border: #ddd;
+      --border-light: #eee;
+      --border-lighter: #f0f0f0;
+      --card-shadow: rgba(0,0,0,0.1);
+      --header-bg: #1a1a2e;
+      --primary: #4a6cf7;
+      --danger: #e74c3c;
+      --badge-on-bg: #d4edda;
+      --badge-on-color: #155724;
+      --badge-off-bg: #f8d7da;
+      --badge-off-color: #721c24;
+      --mobile-card-bg: #fafbfc;
+      --input-bg: #fff;
+      --notes-placeholder: #bbb;
+    }
+    [data-theme="dark"] {
+      --bg: #1a1a2e;
+      --surface: #16213e;
+      --text: #e0e0e0;
+      --text-secondary: #b0b0b0;
+      --text-muted: #909090;
+      --text-faint: #808080;
+      --text-heading: #b0b0b0;
+      --border: #2a2a4a;
+      --border-light: #252545;
+      --border-lighter: #222242;
+      --card-shadow: rgba(0,0,0,0.3);
+      --header-bg: #0f0f23;
+      --primary: #5a7cf7;
+      --danger: #e74c3c;
+      --badge-on-bg: #1a3a2a;
+      --badge-on-color: #6fcf97;
+      --badge-off-bg: #3a1a1a;
+      --badge-off-color: #e88a8a;
+      --mobile-card-bg: #1e1e3a;
+      --input-bg: #1e1e3a;
+      --notes-placeholder: #666;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; color: #333; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); transition: background-color 0.2s, color 0.2s; }
 
     header {
-      background: #1a1a2e; color: #fff; padding: 16px 24px;
+      background: var(--header-bg); color: #fff; padding: 16px 24px;
       display: flex; align-items: center; gap: 12px; justify-content: space-between;
     }
     header h1 { font-size: 20px; font-weight: 600; }
@@ -17,22 +64,25 @@
     .header-right span { font-size: 14px; opacity: 0.8; }
     .btn-logout { background: rgba(255,255,255,0.15); color: #fff; border: none; padding: 6px 14px; border-radius: 4px; font-size: 13px; cursor: pointer; }
     .btn-logout:hover { background: rgba(255,255,255,0.25); }
+    .btn-theme { background: rgba(255,255,255,0.15); color: #fff; border: none; cursor: pointer; padding: 6px; border-radius: 4px; line-height: 1; display: flex; align-items: center; }
+    .btn-theme:hover { background: rgba(255,255,255,0.25); opacity: 1; }
 
     .container { max-width: 900px; margin: 24px auto; padding: 0 16px; }
 
     .card {
-      background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      padding: 20px; margin-bottom: 20px;
+      background: var(--surface); border-radius: 8px; box-shadow: 0 1px 3px var(--card-shadow);
+      padding: 20px; margin-bottom: 20px; transition: background-color 0.2s;
     }
-    .card h2 { font-size: 16px; margin-bottom: 14px; color: #555; }
+    .card h2 { font-size: 16px; margin-bottom: 14px; color: var(--text-heading); }
 
     .form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
     .form-group { display: flex; flex-direction: column; gap: 4px; }
-    .form-group label { font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; }
+    .form-group label { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; }
     .form-group input {
-      padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 140px;
+      padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; width: 140px;
+      background: var(--input-bg); color: var(--text);
     }
-    .form-group input:focus { outline: none; border-color: #4a6cf7; }
+    .form-group input:focus { outline: none; border-color: var(--primary); }
 
     button {
       padding: 8px 16px; border: none; border-radius: 4px; font-size: 13px;
@@ -41,31 +91,31 @@
     button:hover { opacity: 0.85; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    .btn-primary { background: #4a6cf7; color: #fff; }
-    .btn-danger { background: #e74c3c; color: #fff; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
     .btn-toggle { background: #f0ad4e; color: #fff; }
     .btn-enable { background: #27ae60; color: #fff; }
 
-    .error-msg { color: #e74c3c; font-size: 13px; margin-top: 8px; }
+    .error-msg { color: var(--danger); font-size: 13px; margin-top: 8px; }
 
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th { text-align: left; padding: 10px 8px; border-bottom: 2px solid #eee; color: #888; font-size: 12px; text-transform: uppercase; white-space: nowrap; }
+    th { text-align: left; padding: 10px 8px; border-bottom: 2px solid var(--border-light); color: var(--text-muted); font-size: 12px; text-transform: uppercase; white-space: nowrap; }
     th.sortable { cursor: pointer; user-select: none; }
-    th.sortable:hover { color: #4a6cf7; }
+    th.sortable:hover { color: var(--primary); }
     th .sort-arrow { font-size: 10px; margin-left: 3px; }
-    td { padding: 10px 8px; border-bottom: 1px solid #f0f0f0; }
+    td { padding: 10px 8px; border-bottom: 1px solid var(--border-lighter); }
     tr:last-child td { border-bottom: none; }
 
     .badge {
       display: inline-block; padding: 2px 8px; border-radius: 10px;
       font-size: 11px; font-weight: 600; text-transform: uppercase;
     }
-    .badge-on { background: #d4edda; color: #155724; }
-    .badge-off { background: #f8d7da; color: #721c24; }
+    .badge-on { background: var(--badge-on-bg); color: var(--badge-on-color); }
+    .badge-off { background: var(--badge-off-bg); color: var(--badge-off-color); }
 
     .actions { display: flex; gap: 6px; }
-    .empty { text-align: center; color: #999; padding: 32px 0; }
-    .mono { font-family: monospace; font-size: 12px; color: #888; }
+    .empty { text-align: center; color: var(--text-faint); padding: 32px 0; }
+    .mono { font-family: monospace; font-size: 12px; color: var(--text-muted); }
 
     /* Auth styles */
     .auth-wrapper {
@@ -73,15 +123,15 @@
       min-height: calc(100vh - 60px);
     }
     .auth-card {
-      background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      background: var(--surface); border-radius: 8px; box-shadow: 0 2px 8px var(--card-shadow);
       padding: 32px; width: 100%; max-width: 380px;
     }
-    .auth-card h2 { font-size: 22px; margin-bottom: 20px; color: #1a1a2e; text-align: center; }
+    .auth-card h2 { font-size: 22px; margin-bottom: 20px; color: var(--text); text-align: center; }
     .auth-card .form-group { margin-bottom: 14px; }
     .auth-card .form-group input { width: 100%; }
     .auth-card button[type="submit"] { width: 100%; padding: 10px; font-size: 15px; margin-top: 6px; }
-    .auth-toggle { text-align: center; margin-top: 16px; font-size: 13px; color: #666; }
-    .auth-toggle a { color: #4a6cf7; cursor: pointer; text-decoration: none; font-weight: 500; }
+    .auth-toggle { text-align: center; margin-top: 16px; font-size: 13px; color: var(--text-secondary); }
+    .auth-toggle a { color: var(--primary); cursor: pointer; text-decoration: none; font-weight: 500; }
     .auth-toggle a:hover { text-decoration: underline; }
 
     .hidden { display: none !important; }
@@ -107,14 +157,14 @@
       table thead { display: none; }
       table, tbody, tr, td { display: block; width: 100%; }
       tr {
-        background: #fafbfc; border: 1px solid #eee; border-radius: 8px;
+        background: var(--mobile-card-bg); border: 1px solid var(--border-light); border-radius: 8px;
         padding: 12px; margin-bottom: 10px; position: relative;
       }
       td { border-bottom: none; padding: 3px 0; font-size: 13px; }
       td:before {
         content: attr(data-label);
         display: inline-block; width: 70px; font-size: 11px;
-        font-weight: 600; color: #888; text-transform: uppercase;
+        font-weight: 600; color: var(--text-muted); text-transform: uppercase;
       }
       td.actions { padding-top: 8px; }
       td.actions:before { display: none; }
@@ -122,13 +172,26 @@
       .empty:before { display: none; }
     }
   </style>
+  <script>
+    // Set theme before first paint to prevent flash
+    (function() {
+      var t = localStorage.getItem('theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    })();
+  </script>
 </head>
 <body>
   <header>
     <h1>Stock Price Alert Dashboard</h1>
-    <div class="header-right hidden" id="headerRight">
-      <span id="headerUser"></span>
-      <button class="btn-logout" onclick="logout()">Log out</button>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="btn-theme" id="themeToggle" onclick="toggleTheme()" title="Toggle dark mode">
+        <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+      </button>
+      <div class="header-right hidden" id="headerRight">
+        <span id="headerUser"></span>
+        <button class="btn-logout" onclick="logout()">Log out</button>
+      </div>
     </div>
   </header>
 
@@ -175,7 +238,7 @@
           </div>
           <div class="form-group">
             <label for="notes">Notes</label>
-            <textarea id="notes" maxlength="50" placeholder="Optional notes" style="padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:14px;width:180px;height:36px;resize:none;font-family:inherit;" class="notes-input"></textarea>
+            <textarea id="notes" maxlength="50" placeholder="Optional notes" style="padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;width:180px;height:36px;resize:none;font-family:inherit;background:var(--input-bg);color:var(--text);" class="notes-input"></textarea>
           </div>
           <button type="submit" class="btn-primary" id="addBtn">Add Alert</button>
         </div>
@@ -184,7 +247,7 @@
     </div>
 
     <div class="card">
-      <h2>Alerts <span id="alertCount" style="font-weight:400;color:#999;font-size:14px;"></span></h2>
+      <h2>Alerts <span id="alertCount" style="font-weight:400;color:var(--text-faint);font-size:14px;"></span></h2>
       <table>
         <thead>
           <tr>
@@ -382,7 +445,7 @@
       const ta = document.createElement("textarea");
       ta.maxLength = 50;
       ta.value = current;
-      ta.style.cssText = "padding:4px;border:1px solid #4a6cf7;border-radius:4px;font-size:13px;width:140px;height:32px;resize:none;font-family:inherit;";
+      ta.style.cssText = "padding:4px;border:1px solid var(--primary);border-radius:4px;font-size:13px;width:140px;height:32px;resize:none;font-family:inherit;background:var(--input-bg);color:var(--text);";
       const btn = document.createElement("button");
       btn.className = "btn-primary";
       btn.style.cssText = "padding:4px 8px;font-size:12px;margin-left:4px;";
@@ -421,7 +484,7 @@
       input.type = "number";
       input.step = "0.01";
       input.value = current;
-      input.style.cssText = "padding:4px;border:1px solid #4a6cf7;border-radius:4px;font-size:13px;width:80px;";
+      input.style.cssText = "padding:4px;border:1px solid var(--primary);border-radius:4px;font-size:13px;width:80px;background:var(--input-bg);color:var(--text);";
       const btn = document.createElement("button");
       btn.className = "btn-primary";
       btn.style.cssText = "padding:4px 8px;font-size:12px;margin-left:4px;";
@@ -452,7 +515,7 @@
         belowPrice: field === "below" ? value : (alert.belowPrice ?? null),
       };
       if (body.abovePrice == null && body.belowPrice == null) {
-        input.style.borderColor = "#e74c3c";
+        input.style.borderColor = "var(--danger)";
         return;
       }
 
@@ -489,7 +552,7 @@
         const sym = cell.dataset.symbol;
         if (priceCache[sym] != null) {
           cell.textContent = "$" + Number(priceCache[sym]).toFixed(2);
-          cell.style.color = "#333";
+          cell.style.color = "var(--text)";
         } else {
           cell.textContent = "N/A";
         }
@@ -534,7 +597,7 @@
           tdPrice.dataset.label = "Price";
           tdPrice.className = "price-cell";
           tdPrice.dataset.symbol = a.symbol;
-          tdPrice.style.color = "#888";
+          tdPrice.style.color = "var(--text-muted)";
           tdPrice.textContent = "\u2026";
 
           const tdAbove = document.createElement("td");
@@ -568,7 +631,7 @@
           if (a.notes) {
             spanNotes.textContent = a.notes.length > 15 ? a.notes.slice(0, 15) + "\u2026" : a.notes;
           } else {
-            spanNotes.innerHTML = '<em style="color:#bbb">\u2014</em>';
+            spanNotes.innerHTML = '<em style="color:var(--notes-placeholder)">\u2014</em>';
           }
           spanNotes.addEventListener("click", function() { editNotes(this); });
           tdNotes.appendChild(spanNotes);
@@ -593,7 +656,7 @@
           const removeBtn = document.createElement("button");
           removeBtn.title = "Remove alert";
           removeBtn.style.cssText = "background:none;padding:4px 6px;line-height:1;";
-          removeBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+          removeBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
           removeBtn.addEventListener("click", () => removeAlert(a.id));
           tdActions.appendChild(removeBtn);
 
@@ -658,6 +721,30 @@
       await fetch(`/api/alerts/${encodeURIComponent(id)}`, { method: "DELETE" });
       await loadAlerts();
     }
+
+    // ── Theme ─────────────────────────────────────────────────────────────
+    const sunPath = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+    const moonPath = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+
+    function updateThemeIcon() {
+      const icon = document.getElementById("themeIcon");
+      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      icon.innerHTML = isDark ? sunPath : moonPath;
+    }
+
+    function toggleTheme() {
+      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      const next = isDark ? "light" : "dark";
+      if (next === "dark") {
+        document.documentElement.setAttribute("data-theme", "dark");
+      } else {
+        document.documentElement.removeAttribute("data-theme");
+      }
+      localStorage.setItem("theme", next);
+      updateThemeIcon();
+    }
+
+    updateThemeIcon();
 
     // ── Boot ──────────────────────────────────────────────────────────────
     updateSortArrows();
