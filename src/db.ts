@@ -7,10 +7,6 @@ import type { StockAlert, Settings, User } from "./types.js";
 const isLocal = /localhost|127\.0\.0\.1/.test(config.databaseUrl);
 const sslConfig = isLocal ? false : { rejectUnauthorized: false };
 
-// Debug: confirm SSL settings at startup
-const maskedUrl = config.databaseUrl.replace(/:([^@]+)@/, ":***@");
-console.log(`DB connection: isLocal=${isLocal}, ssl=${JSON.stringify(sslConfig)}, url=${maskedUrl}`);
-
 if (!isLocal) {
   process.env.PGSSLMODE = "require";
 }
@@ -37,6 +33,9 @@ export async function initDb(): Promise<void> {
       window_start   TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
+    DELETE FROM login_attempts
+      WHERE window_start < now() - INTERVAL '15 minutes';
+
     CREATE TABLE IF NOT EXISTS alerts (
       id              TEXT PRIMARY KEY,
       user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -56,6 +55,13 @@ export async function initDb(): Promise<void> {
 
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const RATE_LIMIT_MAX = 10;
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+setInterval(async () => {
+  try {
+    await pool.query(`DELETE FROM login_attempts WHERE window_start < now() - INTERVAL '15 minutes'`);
+  } catch { /* best-effort cleanup */ }
+}, CLEANUP_INTERVAL_MS).unref();
 
 export async function checkRateLimit(ip: string): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
   const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
@@ -90,7 +96,7 @@ export async function checkRateLimit(ip: string): Promise<{ allowed: boolean; re
 // ── User functions ──────────────────────────────────────────────────────
 
 export async function createUser(username: string, password: string): Promise<User> {
-  const id = randomUUID().slice(0, 8);
+  const id = randomUUID();
   const passwordHash = await bcrypt.hash(password, 10);
   try {
     const { rows } = await pool.query(
@@ -171,7 +177,7 @@ export async function addAlert(
   belowPrice?: number,
   notes?: string,
 ): Promise<StockAlert> {
-  const id = randomUUID().slice(0, 8);
+  const id = randomUUID();
   const { rows } = await pool.query(
     `INSERT INTO alerts (id, user_id, symbol, name, above_price, below_price, notes)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
