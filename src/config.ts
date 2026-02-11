@@ -1,6 +1,11 @@
+import dns from "node:dns";
 import "dotenv/config";
 
+// Prefer IPv4 to avoid ENETUNREACH on hosts without IPv6 (e.g. Render)
+dns.setDefaultResultOrder("ipv4first");
+
 export const config = {
+  databaseUrl: process.env.DATABASE_URL || "postgresql://localhost:5432/stock_alerts",
   smtp: {
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 587),

@@ -155,20 +155,28 @@
 
       /* Hide table layout, show as cards */
       table thead { display: none; }
-      table, tbody, tr, td { display: block; width: 100%; }
+      table, tbody { display: block; width: 100%; }
       tr {
+        display: flex; flex-wrap: wrap; align-items: flex-start;
         background: var(--mobile-card-bg); border: 1px solid var(--border-light); border-radius: 8px;
-        padding: 12px; margin-bottom: 10px; position: relative;
+        padding: 12px; padding-top: 10px; margin-bottom: 10px; position: relative;
       }
-      td { border-bottom: none; padding: 3px 0; font-size: 13px; }
+      td { display: block; width: 100%; border-bottom: none; padding: 3px 0; font-size: 13px; order: 5; }
       td:before {
         content: attr(data-label);
         display: inline-block; width: 70px; font-size: 11px;
         font-weight: 600; color: var(--text-muted); text-transform: uppercase;
       }
-      td.actions { padding-top: 8px; }
+      /* Position status toggle and delete icon in upper right of card */
+      td.cell-status {
+        order: 1; width: auto; margin-left: auto; padding: 0;
+      }
+      td.cell-status:before { display: none; }
+      td.actions {
+        order: 2; width: auto; padding: 0;
+      }
       td.actions:before { display: none; }
-      .empty { text-align: center; background: none; border: none; }
+      .empty { text-align: center; background: none; border: none; width: 100%; }
       .empty:before { display: none; }
     }
   </style>
@@ -438,23 +446,14 @@
       return d.innerHTML;
     }
 
-    function editNotes(span) {
+    function editNotes(span, id) {
       const cell = span.parentElement;
-      const id = cell.dataset.id;
       const current = span.textContent === "\u2014" ? "" : span.textContent;
-      const ta = document.createElement("textarea");
-      ta.maxLength = 50;
-      ta.value = current;
-      ta.style.cssText = "padding:4px;border:1px solid var(--primary);border-radius:4px;font-size:13px;width:140px;height:32px;resize:none;font-family:inherit;background:var(--input-bg);color:var(--text);";
-      const btn = document.createElement("button");
-      btn.className = "btn-primary";
-      btn.style.cssText = "padding:4px 8px;font-size:12px;margin-left:4px;";
-      btn.textContent = "Save";
-      btn.addEventListener("click", () => saveNotes(id, btn));
-      cell.textContent = "";
-      cell.appendChild(ta);
-      cell.appendChild(btn);
-      ta.focus();
+      cell.innerHTML = `
+        <textarea maxlength="50" style="padding:4px;border:1px solid var(--primary);border-radius:4px;font-size:13px;width:140px;height:32px;resize:none;font-family:inherit;background:var(--input-bg);color:var(--text);">${esc(current)}</textarea>
+        <button class="btn-primary" style="padding:4px 8px;font-size:12px;margin-left:4px;" onclick="saveNotes('${id}', this)">Save</button>
+      `;
+      cell.querySelector("textarea").focus();
     }
 
     async function saveNotes(id, btn) {
@@ -464,7 +463,7 @@
       btn.disabled = true;
       btn.textContent = "...";
       try {
-        await fetch(`/api/alerts/${encodeURIComponent(id)}/notes`, {
+        await fetch(`/api/alerts/${id}/notes`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ notes }),
@@ -476,24 +475,14 @@
       }
     }
 
-    function editThreshold(span, field) {
+    function editThreshold(span, id, field) {
       const cell = span.parentElement;
-      const id = cell.dataset.id;
       const current = span.textContent === "\u2014" ? "" : span.textContent.replace("$", "");
-      const input = document.createElement("input");
-      input.type = "number";
-      input.step = "0.01";
-      input.value = current;
-      input.style.cssText = "padding:4px;border:1px solid var(--primary);border-radius:4px;font-size:13px;width:80px;background:var(--input-bg);color:var(--text);";
-      const btn = document.createElement("button");
-      btn.className = "btn-primary";
-      btn.style.cssText = "padding:4px 8px;font-size:12px;margin-left:4px;";
-      btn.textContent = "Save";
-      btn.addEventListener("click", () => saveThreshold(id, field, btn));
-      cell.textContent = "";
-      cell.appendChild(input);
-      cell.appendChild(btn);
-      input.focus();
+      cell.innerHTML = `
+        <input type="number" step="0.01" value="${esc(current)}" style="padding:4px;border:1px solid var(--primary);border-radius:4px;font-size:13px;width:80px;background:var(--input-bg);color:var(--text);">
+        <button class="btn-primary" style="padding:4px 8px;font-size:12px;margin-left:4px;" onclick="saveThreshold('${id}', '${field}', this)">Save</button>
+      `;
+      cell.querySelector("input").focus();
     }
 
     async function saveThreshold(id, field, btn) {
@@ -522,7 +511,7 @@
       btn.disabled = true;
       btn.textContent = "...";
       try {
-        await fetch(`/api/alerts/${encodeURIComponent(id)}/thresholds`, {
+        await fetch(`/api/alerts/${id}/thresholds`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -578,91 +567,23 @@
           return;
         }
         const sorted = sortAlerts(alerts);
-        alertsBody.innerHTML = "";
-        sorted.forEach(a => {
-          const tr = document.createElement("tr");
-          tr.dataset.alertId = a.id;
-
-          const tdSymbol = document.createElement("td");
-          tdSymbol.dataset.label = "Symbol";
-          tdSymbol.innerHTML = `<strong>${esc(a.symbol)}</strong>`;
-
-          const tdName = document.createElement("td");
-          tdName.dataset.label = "Name";
-          tdName.className = "name-cell";
-          tdName.dataset.symbol = a.symbol;
-          tdName.textContent = nameCache[a.symbol] && nameCache[a.symbol] !== a.symbol ? nameCache[a.symbol] : a.name;
-
-          const tdPrice = document.createElement("td");
-          tdPrice.dataset.label = "Price";
-          tdPrice.className = "price-cell";
-          tdPrice.dataset.symbol = a.symbol;
-          tdPrice.style.color = "var(--text-muted)";
-          tdPrice.textContent = "\u2026";
-
-          const tdAbove = document.createElement("td");
-          tdAbove.dataset.label = "Above";
-          tdAbove.dataset.id = a.id;
-          const spanAbove = document.createElement("span");
-          spanAbove.style.cursor = "pointer";
-          spanAbove.title = "Click to edit";
-          spanAbove.textContent = a.abovePrice != null ? "$" + Number(a.abovePrice).toFixed(2) : "\u2014";
-          spanAbove.addEventListener("click", function() { editThreshold(this, "above"); });
-          tdAbove.appendChild(spanAbove);
-
-          const tdBelow = document.createElement("td");
-          tdBelow.dataset.label = "Below";
-          tdBelow.dataset.id = a.id;
-          const spanBelow = document.createElement("span");
-          spanBelow.style.cursor = "pointer";
-          spanBelow.title = "Click to edit";
-          spanBelow.textContent = a.belowPrice != null ? "$" + Number(a.belowPrice).toFixed(2) : "\u2014";
-          spanBelow.addEventListener("click", function() { editThreshold(this, "below"); });
-          tdBelow.appendChild(spanBelow);
-
-          const tdNotes = document.createElement("td");
-          tdNotes.dataset.label = "Notes";
-          tdNotes.className = "notes-cell";
-          tdNotes.dataset.id = a.id;
-          const spanNotes = document.createElement("span");
-          spanNotes.className = "notes-display";
-          spanNotes.title = a.notes || "Click to edit";
-          spanNotes.style.cssText = "cursor:pointer;min-width:40px;display:inline-block;";
-          if (a.notes) {
-            spanNotes.textContent = a.notes.length > 15 ? a.notes.slice(0, 15) + "\u2026" : a.notes;
-          } else {
-            spanNotes.innerHTML = '<em style="color:var(--notes-placeholder)">\u2014</em>';
-          }
-          spanNotes.addEventListener("click", function() { editNotes(this); });
-          tdNotes.appendChild(spanNotes);
-
-          const tdCreated = document.createElement("td");
-          tdCreated.dataset.label = "Created";
-          tdCreated.className = "mono";
-          tdCreated.textContent = fmtDate(a.createdAt);
-
-          const tdStatus = document.createElement("td");
-          tdStatus.dataset.label = "Status";
-          const badge = document.createElement("span");
-          badge.className = "badge " + (a.enabled ? "badge-on" : "badge-off");
-          badge.style.cursor = "pointer";
-          badge.title = "Click to toggle";
-          badge.textContent = a.enabled ? "Enabled" : "Disabled";
-          badge.addEventListener("click", () => toggleAlert(a.id, a.enabled));
-          tdStatus.appendChild(badge);
-
-          const tdActions = document.createElement("td");
-          tdActions.className = "actions";
-          const removeBtn = document.createElement("button");
-          removeBtn.title = "Remove alert";
-          removeBtn.style.cssText = "background:none;padding:4px 6px;line-height:1;";
-          removeBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
-          removeBtn.addEventListener("click", () => removeAlert(a.id));
-          tdActions.appendChild(removeBtn);
-
-          tr.append(tdSymbol, tdName, tdPrice, tdAbove, tdBelow, tdNotes, tdCreated, tdStatus, tdActions);
-          alertsBody.appendChild(tr);
-        });
+        alertsBody.innerHTML = sorted.map(a => `
+          <tr>
+            <td data-label="Symbol"><strong>${a.symbol}</strong></td>
+            <td data-label="Name" class="name-cell" data-symbol="${a.symbol}">${nameCache[a.symbol] && nameCache[a.symbol] !== a.symbol ? esc(nameCache[a.symbol]) : esc(a.name)}</td>
+            <td data-label="Price" class="price-cell" data-symbol="${a.symbol}" style="color:var(--text-muted);">\u2026</td>
+            <td data-label="Above"><span onclick="editThreshold(this, '${a.id}', 'above')" style="cursor:pointer;" title="Click to edit">${fmt(a.abovePrice)}</span></td>
+            <td data-label="Below"><span onclick="editThreshold(this, '${a.id}', 'below')" style="cursor:pointer;" title="Click to edit">${fmt(a.belowPrice)}</span></td>
+            <td data-label="Notes" class="notes-cell" data-id="${a.id}">
+              <span class="notes-display" onclick="editNotes(this, '${a.id}')" title="${a.notes ? esc(a.notes) : 'Click to edit'}" style="cursor:pointer;min-width:40px;display:inline-block;">${a.notes ? (a.notes.length > 15 ? esc(a.notes.slice(0, 15)) + '\u2026' : esc(a.notes)) : '<em style="color:var(--notes-placeholder)">\u2014</em>'}</span>
+            </td>
+            <td data-label="Created" class="mono">${fmtDate(a.createdAt)}</td>
+            <td data-label="Status" class="cell-status"><span class="badge ${a.enabled ? "badge-on" : "badge-off"}" onclick="toggleAlert('${a.id}', ${a.enabled})" style="cursor:pointer;" title="Click to toggle">${a.enabled ? "Enabled" : "Disabled"}</span></td>
+            <td class="actions">
+              <button onclick="removeAlert('${a.id}')" title="Remove alert" style="background:none;padding:4px 6px;line-height:1;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
+            </td>
+          </tr>
+        `).join("");
         if (!skipPrices) loadPrices();
       } catch {
         alertsBody.innerHTML = '<tr><td colspan="10" class="empty">Failed to load alerts.</td></tr>';
@@ -712,13 +633,13 @@
 
     async function toggleAlert(id, currentlyEnabled) {
       const action = currentlyEnabled ? "disable" : "enable";
-      await fetch(`/api/alerts/${encodeURIComponent(id)}/${action}`, { method: "PATCH" });
+      await fetch(`/api/alerts/${id}/${action}`, { method: "PATCH" });
       await loadAlerts();
     }
 
     async function removeAlert(id) {
       if (!confirm("Remove this alert?")) return;
-      await fetch(`/api/alerts/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await fetch(`/api/alerts/${id}`, { method: "DELETE" });
       await loadAlerts();
     }
 

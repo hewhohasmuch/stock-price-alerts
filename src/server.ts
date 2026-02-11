@@ -1,17 +1,16 @@
 import express from "express";
 import session from "express-session";
-import FileStoreFactory from "session-file-store";
+import connectPgSimple from "connect-pg-simple";
 import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  initDb, pool, checkRateLimit,
   listAlerts, addAlert, removeAlert, setAlertEnabled, updateAlertNotes,
   updateAlertThresholds, createUser, verifyUser,
 } from "./db.js";
 import { fetchSinglePrice, fetchPrices } from "./services/price-fetcher.js";
 import { startScheduler } from "./scheduler.js";
-
-const FileStore = FileStoreFactory(session);
 
 declare module "express-session" {
   interface SessionData {
@@ -37,18 +36,21 @@ if (!sessionSecret) {
 }
 const resolvedSecret = sessionSecret || randomUUID();
 
-// ── Persistent session store ─────────────────────────────────────────────
-const sessionStorePath = join(__dirname, "..", "data", "sessions");
+// ── Trust proxy (must precede session so req.ip and secure cookies work) ─
+if (isProduction) {
+  app.set("trust proxy", 1);
+}
+
+// ── PostgreSQL session store ─────────────────────────────────────────────
+const PgStore = connectPgSimple(session);
 
 app.use(express.json());
 
 app.use(
   session({
-    store: new FileStore({
-      path: sessionStorePath,
-      ttl: 7 * 24 * 60 * 60, // 7 days in seconds
-      retries: 1,
-      logFn: () => {},        // suppress verbose file-store logs
+    store: new PgStore({
+      pool,
+      createTableIfMissing: true,
     }),
     secret: resolvedSecret,
     resave: false,
@@ -63,53 +65,31 @@ app.use(
   })
 );
 
-if (isProduction) {
-  app.set("trust proxy", 1);
-}
-
 app.use(express.static(join(__dirname, "..", "public")));
 
-// ── Rate limiting ────────────────────────────────────────────────────────
-const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
-const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const AUTH_RATE_MAX = 10; // max auth attempts per window
-const API_RATE_WINDOW_MS = 60 * 1000;       // 1 minute
-const API_RATE_MAX = 60;                     // max API calls per window per user
+// ── Rate limiting for auth endpoints ─────────────────────────────────────
 
-// Clean up expired rate-limit entries every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of rateLimitBuckets) {
-    if (now >= v.resetAt) rateLimitBuckets.delete(k);
-  }
-}, 5 * 60 * 1000).unref();
-
-function rateLimit(prefix: string, windowMs: number, max: number) {
-  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const key = `${prefix}:${req.ip || "unknown"}`;
-    const now = Date.now();
-    const entry = rateLimitBuckets.get(key);
-
-    if (entry && now < entry.resetAt) {
-      if (entry.count >= max) {
-        const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
-        res.status(429).json({
-          error: "Too many requests. Please try again later.",
-          retryAfterSeconds: retryAfter,
-        });
-        return;
-      }
-      entry.count++;
-    } else {
-      rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
+async function rateLimitAuth(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  try {
+    const ip = req.ip || "unknown";
+    const result = await checkRateLimit(ip);
+    if (!result.allowed) {
+      res.status(429).json({
+        error: "Too many attempts. Please try again later.",
+        retryAfterSeconds: result.retryAfterSeconds,
+      });
+      return;
     }
-
     next();
-  };
+  } catch (err) {
+    console.error("Rate limit check failed:", (err as Error).message);
+    res.status(503).json({ error: "Service temporarily unavailable. Please try again later." });
+  }
 }
-
-const rateLimitAuth = rateLimit("auth", AUTH_RATE_WINDOW_MS, AUTH_RATE_MAX);
-const rateLimitApi = rateLimit("api", API_RATE_WINDOW_MS, API_RATE_MAX);
 
 // ── Auth routes ─────────────────────────────────────────────────────────
 
@@ -322,9 +302,9 @@ app.patch("/api/alerts/:id/thresholds", requireAuth, async (req, res) => {
   }
 });
 
-// ── Price routes (protected + rate-limited) ─────────────────────────────
+// ── Price routes (protected) ────────────────────────────────────────────
 
-app.get("/api/prices", requireAuth, rateLimitApi, async (req, res) => {
+app.get("/api/prices", requireAuth, async (req, res) => {
   try {
     const raw = req.query.symbols;
     if (typeof raw !== "string" || !raw.trim()) {
@@ -348,7 +328,7 @@ app.get("/api/prices", requireAuth, rateLimitApi, async (req, res) => {
   }
 });
 
-app.get("/api/price/:symbol", requireAuth, rateLimitApi, async (req, res) => {
+app.get("/api/price/:symbol", requireAuth, async (req, res) => {
   try {
     const symbol = String(req.params.symbol);
     const result = await fetchSinglePrice(symbol);
@@ -362,7 +342,19 @@ app.get("/api/price/:symbol", requireAuth, rateLimitApi, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Dashboard running at http://localhost:${PORT}`);
-  startScheduler();
-});
+initDb()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Dashboard running at http://localhost:${PORT}`);
+      try {
+        startScheduler();
+      } catch (err) {
+        console.error("Failed to start scheduler:", (err as Error).message);
+        console.error("The web dashboard will continue running without automatic price checks.");
+      }
+    });
+  })
+  .catch((err) => {
+    console.error("FATAL: Failed to initialize database:", (err as Error).message);
+    process.exit(1);
+  });
