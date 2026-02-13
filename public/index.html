@@ -114,6 +114,7 @@
     .badge-off { background: var(--badge-off-bg); color: var(--badge-off-color); }
 
     .actions { display: flex; gap: 6px; }
+    .notes-full { display: none; }
     .empty { text-align: center; color: var(--text-faint); padding: 32px 0; }
     .mono { font-family: monospace; font-size: 12px; color: var(--text-muted); }
 
@@ -153,29 +154,53 @@
       .auth-wrapper { padding: 16px; min-height: calc(100vh - 52px); }
       .auth-card { padding: 24px 20px; }
 
-      /* Hide table layout, show as cards */
+      /* Hide table layout, show as compact cards */
       table thead { display: none; }
       table, tbody { display: block; width: 100%; }
       tr {
         display: flex; flex-wrap: wrap; align-items: flex-start;
         background: var(--mobile-card-bg); border: 1px solid var(--border-light); border-radius: 8px;
-        padding: 12px; padding-top: 10px; margin-bottom: 10px; position: relative;
+        padding: 8px 10px; padding-top: 6px; margin-bottom: 6px; position: relative;
       }
-      td { display: block; width: 100%; border-bottom: none; padding: 3px 0; font-size: 13px; order: 5; }
+      td { display: block; width: 100%; border-bottom: none; padding: 1px 0; font-size: 12px; order: 5; }
       td:before {
         content: attr(data-label);
-        display: inline-block; width: 70px; font-size: 11px;
+        display: inline-block; width: 52px; font-size: 10px;
         font-weight: 600; color: var(--text-muted); text-transform: uppercase;
       }
-      /* Position status toggle and delete icon in upper right of card */
+
+      /* Row 1: Symbol + Price (left), Status + Actions (right) */
+      td[data-label="Symbol"] { order: 1; width: auto; font-size: 15px; padding: 0; }
+      td[data-label="Symbol"]:before { display: none; }
+      td[data-label="Price"] { order: 2; width: auto; padding: 0 0 0 8px; font-weight: 700; font-size: 15px; margin-right: auto; }
+      td[data-label="Price"]:before { display: none; }
       td.cell-status {
-        order: 1; width: auto; margin-left: auto; padding: 0;
+        order: 3; width: auto; padding: 0;
       }
       td.cell-status:before { display: none; }
+      td.cell-status .badge { font-size: 10px; padding: 1px 6px; }
       td.actions {
-        order: 2; width: auto; padding: 0;
+        order: 3; width: auto; padding: 0;
       }
       td.actions:before { display: none; }
+      td.actions button { padding: 2px 4px !important; }
+
+      /* Force line break after first row */
+      tr::before { content: ''; order: 4; flex-basis: 100%; height: 0; }
+
+      /* Above + Below: same row, 50% each */
+      td[data-label="Above"] { order: 6; width: 50%; }
+      td[data-label="Below"] { order: 7; width: 50%; }
+
+      /* Notes: full width, show full text */
+      td[data-label="Notes"] { order: 7; }
+      .notes-short { display: none; }
+      .notes-full { display: inline; }
+
+      /* Hide Name and Created on mobile */
+      td[data-label="Name"],
+      td[data-label="Created"] { display: none; }
+
       .empty { text-align: center; background: none; border: none; width: 100%; }
       .empty:before { display: none; }
     }
@@ -575,7 +600,7 @@
             <td data-label="Above"><span onclick="editThreshold(this, '${a.id}', 'above')" style="cursor:pointer;" title="Click to edit">${fmt(a.abovePrice)}</span></td>
             <td data-label="Below"><span onclick="editThreshold(this, '${a.id}', 'below')" style="cursor:pointer;" title="Click to edit">${fmt(a.belowPrice)}</span></td>
             <td data-label="Notes" class="notes-cell" data-id="${a.id}">
-              <span class="notes-display" onclick="editNotes(this, '${a.id}')" title="${a.notes ? esc(a.notes) : 'Click to edit'}" style="cursor:pointer;min-width:40px;display:inline-block;">${a.notes ? (a.notes.length > 15 ? esc(a.notes.slice(0, 15)) + '\u2026' : esc(a.notes)) : '<em style="color:var(--notes-placeholder)">\u2014</em>'}</span>
+              <span class="notes-display" onclick="editNotes(this, '${a.id}')" title="${a.notes ? esc(a.notes) : 'Click to edit'}" style="cursor:pointer;min-width:40px;display:inline-block;"><span class="notes-short">${a.notes ? (a.notes.length > 15 ? esc(a.notes.slice(0, 15)) + '\u2026' : esc(a.notes)) : '<em style="color:var(--notes-placeholder)">\u2014</em>'}</span><span class="notes-full">${a.notes ? esc(a.notes) : '<em style="color:var(--notes-placeholder)">\u2014</em>'}</span></span>
             </td>
             <td data-label="Created" class="mono">${fmtDate(a.createdAt)}</td>
             <td data-label="Status" class="cell-status"><span class="badge ${a.enabled ? "badge-on" : "badge-off"}" onclick="toggleAlert('${a.id}', ${a.enabled})" style="cursor:pointer;" title="Click to toggle">${a.enabled ? "Enabled" : "Disabled"}</span></td>
