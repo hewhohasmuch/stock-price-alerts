@@ -13,16 +13,18 @@ export function evaluateAlerts(
     const priceData = priceMap.get(alert.symbol);
     if (!priceData) continue;
 
-    if (isInCooldown(alert, cooldownMinutes, now)) continue;
-
-    if (alert.abovePrice != null && priceData.price >= alert.abovePrice) {
+    if (alert.abovePrice != null && priceData.price >= alert.abovePrice &&
+        !isInCooldown(alert, "above", cooldownMinutes, now)) {
       triggered.push({
         alert,
         currentPrice: priceData.price,
         direction: "above",
         threshold: alert.abovePrice,
       });
-    } else if (alert.belowPrice != null && priceData.price <= alert.belowPrice) {
+    }
+
+    if (alert.belowPrice != null && priceData.price <= alert.belowPrice &&
+        !isInCooldown(alert, "below", cooldownMinutes, now)) {
       triggered.push({
         alert,
         currentPrice: priceData.price,
@@ -35,8 +37,9 @@ export function evaluateAlerts(
   return triggered;
 }
 
-function isInCooldown(alert: StockAlert, cooldownMinutes: number, now: number): boolean {
-  if (!alert.lastNotifiedAt) return false;
-  const elapsed = now - new Date(alert.lastNotifiedAt).getTime();
+function isInCooldown(alert: StockAlert, direction: "above" | "below", cooldownMinutes: number, now: number): boolean {
+  const timestamp = direction === "above" ? alert.lastNotifiedAboveAt : alert.lastNotifiedBelowAt;
+  if (!timestamp) return false;
+  const elapsed = now - new Date(timestamp).getTime();
   return elapsed < cooldownMinutes * 60 * 1000;
 }
