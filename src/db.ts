@@ -46,8 +46,14 @@ export async function initDb(): Promise<void> {
       notes           TEXT,
       enabled         BOOLEAN NOT NULL DEFAULT true,
       last_notified_at TIMESTAMPTZ,
+      last_notified_above_at TIMESTAMPTZ,
+      last_notified_below_at TIMESTAMPTZ,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+
+    -- Migration: add per-direction cooldown columns to existing tables
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS last_notified_above_at TIMESTAMPTZ;
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS last_notified_below_at TIMESTAMPTZ;
   `);
 }
 
@@ -158,6 +164,8 @@ function rowToAlert(row: any): StockAlert {
     notes: row.notes ?? undefined,
     enabled: row.enabled,
     lastNotifiedAt: row.lastNotifiedAt ? row.lastNotifiedAt.toISOString() : undefined,
+    lastNotifiedAboveAt: row.lastNotifiedAboveAt ? row.lastNotifiedAboveAt.toISOString() : undefined,
+    lastNotifiedBelowAt: row.lastNotifiedBelowAt ? row.lastNotifiedBelowAt.toISOString() : undefined,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -166,6 +174,8 @@ const ALERT_COLUMNS = `
   id, user_id AS "userId", symbol, name,
   above_price AS "abovePrice", below_price AS "belowPrice",
   notes, enabled, last_notified_at AS "lastNotifiedAt",
+  last_notified_above_at AS "lastNotifiedAboveAt",
+  last_notified_below_at AS "lastNotifiedBelowAt",
   created_at AS "createdAt"
 `;
 
@@ -239,9 +249,10 @@ export async function updateAlertThresholds(
   return (rowCount ?? 0) > 0;
 }
 
-export async function updateLastNotified(id: string): Promise<void> {
+export async function updateLastNotified(id: string, direction: "above" | "below"): Promise<void> {
+  const column = direction === "above" ? "last_notified_above_at" : "last_notified_below_at";
   await pool.query(
-    `UPDATE alerts SET last_notified_at = now() WHERE id = $1`,
+    `UPDATE alerts SET ${column} = now() WHERE id = $1`,
     [id],
   );
 }

@@ -16,10 +16,13 @@ export async function notify(triggered: TriggeredAlert[]): Promise<void> {
       `[ALERT] ${alert.symbol} ($${currentPrice.toFixed(2)}) is ${arrow} $${threshold}`
     );
 
+    let anySucceeded = false;
+
     if (emailEnabled) {
       try {
         await sendEmailAlert(t);
         console.log(`  -> Email sent to configured address`);
+        anySucceeded = true;
       } catch (err) {
         console.error(`  -> Email failed:`, (err as Error).message);
       }
@@ -29,11 +32,14 @@ export async function notify(triggered: TriggeredAlert[]): Promise<void> {
       try {
         await sendSmsAlert(t);
         console.log(`  -> SMS sent to configured number`);
+        anySucceeded = true;
       } catch (err) {
         console.error(`  -> SMS failed:`, (err as Error).message);
       }
     }
 
-    await updateLastNotified(alert.id);
+    if (anySucceeded) {
+      await updateLastNotified(alert.id, direction);
+    }
   }
 }

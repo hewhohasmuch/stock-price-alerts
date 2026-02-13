@@ -15,6 +15,8 @@ export interface StockAlert {
   notes?: string;
   enabled: boolean;
   lastNotifiedAt?: string;
+  lastNotifiedAboveAt?: string;
+  lastNotifiedBelowAt?: string;
   createdAt: string;
 }
 

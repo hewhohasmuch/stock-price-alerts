@@ -49,11 +49,22 @@ describe("evaluateAlerts", () => {
     expect(result).toHaveLength(0);
   });
 
-  it("skips alert in cooldown", () => {
+  it("skips above alert in above cooldown", () => {
     const alerts = [
       makeAlert({
         abovePrice: 190,
-        lastNotifiedAt: new Date().toISOString(), // just now
+        lastNotifiedAboveAt: new Date().toISOString(),
+      }),
+    ];
+    const result = evaluateAlerts(alerts, prices, 60);
+    expect(result).toHaveLength(0);
+  });
+
+  it("skips below alert in below cooldown", () => {
+    const alerts = [
+      makeAlert({
+        belowPrice: 210,
+        lastNotifiedBelowAt: new Date().toISOString(),
       }),
     ];
     const result = evaluateAlerts(alerts, prices, 60);
@@ -62,9 +73,37 @@ describe("evaluateAlerts", () => {
 
   it("triggers alert past cooldown", () => {
     const pastCooldown = new Date(Date.now() - 61 * 60 * 1000).toISOString();
-    const alerts = [makeAlert({ abovePrice: 190, lastNotifiedAt: pastCooldown })];
+    const alerts = [makeAlert({ abovePrice: 190, lastNotifiedAboveAt: pastCooldown })];
     const result = evaluateAlerts(alerts, prices, 60);
     expect(result).toHaveLength(1);
+  });
+
+  it("above cooldown does not block below alert", () => {
+    const alerts = [
+      makeAlert({
+        abovePrice: 190,
+        belowPrice: 210,
+        lastNotifiedAboveAt: new Date().toISOString(), // above in cooldown
+      }),
+    ];
+    const result = evaluateAlerts(alerts, prices, 60);
+    // above is blocked by cooldown, but below should still trigger
+    expect(result).toHaveLength(1);
+    expect(result[0].direction).toBe("below");
+  });
+
+  it("below cooldown does not block above alert", () => {
+    const alerts = [
+      makeAlert({
+        abovePrice: 190,
+        belowPrice: 210,
+        lastNotifiedBelowAt: new Date().toISOString(), // below in cooldown
+      }),
+    ];
+    const result = evaluateAlerts(alerts, prices, 60);
+    // below is blocked by cooldown, but above should still trigger
+    expect(result).toHaveLength(1);
+    expect(result[0].direction).toBe("above");
   });
 
   it("triggers exact price match for above", () => {
@@ -101,11 +140,12 @@ describe("evaluateAlerts", () => {
     expect(result).toHaveLength(0);
   });
 
-  it("above takes priority over below when both match", () => {
-    // price is 200, above=200, below=200: above branch runs first
+  it("triggers both above and below when both match", () => {
+    // price is 200, above=200, below=200: both should trigger independently
     const alerts = [makeAlert({ abovePrice: 200, belowPrice: 200 })];
     const result = evaluateAlerts(alerts, prices, 60);
-    expect(result).toHaveLength(1);
+    expect(result).toHaveLength(2);
     expect(result[0].direction).toBe("above");
+    expect(result[1].direction).toBe("below");
   });
 });
