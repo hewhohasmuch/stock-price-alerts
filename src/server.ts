@@ -4,6 +4,9 @@ import connectPgSimple from "connect-pg-simple";
 import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+
+const KEEP_ALIVE_URL = process.env.KEEP_ALIVE_URL;
+const KEEP_ALIVE_INTERVAL_MS = 14 * 60 * 1000; // 14 minutes
 import {
   initDb, pool, checkRateLimit,
   listAlerts, addAlert, removeAlert, setAlertEnabled, updateAlertNotes,
@@ -90,6 +93,11 @@ async function rateLimitAuth(
     res.status(503).json({ error: "Service temporarily unavailable. Please try again later." });
   }
 }
+
+// ── Health check (public, used by keep-alive ping) ──────────────────────
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
 
 // ── Auth routes ─────────────────────────────────────────────────────────
 
@@ -351,6 +359,19 @@ initDb()
       } catch (err) {
         console.error("Failed to start scheduler:", (err as Error).message);
         console.error("The web dashboard will continue running without automatic price checks.");
+      }
+
+      // ── Keep-alive self-ping (prevents Render free tier spin-down) ──
+      if (KEEP_ALIVE_URL) {
+        console.log(`Keep-alive enabled: pinging ${KEEP_ALIVE_URL}/health every 14 minutes`);
+        setInterval(async () => {
+          try {
+            const res = await fetch(`${KEEP_ALIVE_URL}/health`);
+            console.log(`[keep-alive] pinged ${KEEP_ALIVE_URL}/health — ${res.status}`);
+          } catch (err) {
+            console.warn(`[keep-alive] ping failed:`, (err as Error).message);
+          }
+        }, KEEP_ALIVE_INTERVAL_MS);
       }
     });
   })
