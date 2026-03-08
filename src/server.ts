@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import {
   initDb, pool, checkRateLimit,
   listAlerts, addAlert, removeAlert, setAlertEnabled, updateAlertNotes,
-  updateAlertThresholds, createUser, verifyUser,
+  updateAlertThresholds, resetBreach, createUser, verifyUser,
 } from "./db.js";
 import { fetchSinglePrice, fetchPrices } from "./services/price-fetcher.js";
 import { startScheduler } from "./scheduler.js";
@@ -305,6 +305,24 @@ app.patch("/api/alerts/:id/thresholds", requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to update thresholds" });
+  }
+});
+
+app.patch("/api/alerts/:id/reset-breach", requireAuth, async (req, res) => {
+  try {
+    const { direction } = req.body;
+    if (direction !== "above" && direction !== "below") {
+      res.status(400).json({ error: "direction must be 'above' or 'below'" });
+      return;
+    }
+    const ok = await resetBreach(String(req.params.id), req.session.userId!, direction);
+    if (!ok) {
+      res.status(404).json({ error: "Alert not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to reset breach" });
   }
 });
 
