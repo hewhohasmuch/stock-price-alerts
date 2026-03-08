@@ -118,6 +118,13 @@
     .empty { text-align: center; color: var(--text-faint); padding: 32px 0; }
     .mono { font-family: monospace; font-size: 12px; color: var(--text-muted); }
 
+    .breach-dot {
+      display: inline-block; margin-left: 5px; color: var(--danger);
+      font-size: 11px; cursor: pointer; vertical-align: middle;
+      line-height: 1; opacity: 0.85;
+    }
+    .breach-dot:hover { opacity: 1; }
+
     /* Auth styles */
     .auth-wrapper {
       display: flex; justify-content: center; align-items: center;
@@ -452,6 +459,20 @@
       return val != null ? "$" + Number(val).toFixed(2) : "\u2014";
     }
 
+    function isToday(isoStr) {
+      if (!isoStr) return false;
+      return new Date(isoStr).toDateString() === new Date().toDateString();
+    }
+
+    async function resetBreach(id, direction) {
+      await fetch(`/api/alerts/${id}/reset-breach`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ direction }),
+      });
+      await loadAlerts();
+    }
+
     function fmtDate(iso) {
       if (!iso) return "\u2014";
       const d = new Date(iso);
@@ -597,8 +618,8 @@
             <td data-label="Symbol"><strong>${a.symbol}</strong></td>
             <td data-label="Name" class="name-cell" data-symbol="${a.symbol}">${nameCache[a.symbol] && nameCache[a.symbol] !== a.symbol ? esc(nameCache[a.symbol]) : esc(a.name)}</td>
             <td data-label="Price" class="price-cell" data-symbol="${a.symbol}" style="color:var(--text-muted);">\u2026</td>
-            <td data-label="Above"><span onclick="editThreshold(this, '${a.id}', 'above')" style="cursor:pointer;" title="Click to edit">${fmt(a.abovePrice)}</span></td>
-            <td data-label="Below"><span onclick="editThreshold(this, '${a.id}', 'below')" style="cursor:pointer;" title="Click to edit">${fmt(a.belowPrice)}</span></td>
+            <td data-label="Above"><span onclick="editThreshold(this, '${a.id}', 'above')" style="cursor:pointer;" title="Click to edit">${fmt(a.abovePrice)}</span>${isToday(a.lastNotifiedAboveAt) ? `<span class="breach-dot" onclick="resetBreach('${a.id}', 'above')" title="Notified today — click to allow another SMS">&#9679;</span>` : ""}</td>
+            <td data-label="Below"><span onclick="editThreshold(this, '${a.id}', 'below')" style="cursor:pointer;" title="Click to edit">${fmt(a.belowPrice)}</span>${isToday(a.lastNotifiedBelowAt) ? `<span class="breach-dot" onclick="resetBreach('${a.id}', 'below')" title="Notified today — click to allow another SMS">&#9679;</span>` : ""}</td>
             <td data-label="Notes" class="notes-cell" data-id="${a.id}">
               <span class="notes-display" onclick="editNotes(this, '${a.id}')" title="${a.notes ? esc(a.notes) : 'Click to edit'}" style="cursor:pointer;min-width:40px;display:inline-block;"><span class="notes-short">${a.notes ? (a.notes.length > 15 ? esc(a.notes.slice(0, 15)) + '\u2026' : esc(a.notes)) : '<em style="color:var(--notes-placeholder)">\u2014</em>'}</span><span class="notes-full">${a.notes ? esc(a.notes) : '<em style="color:var(--notes-placeholder)">\u2014</em>'}</span></span>
             </td>

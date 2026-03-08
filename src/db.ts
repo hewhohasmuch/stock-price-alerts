@@ -243,8 +243,22 @@ export async function updateAlertThresholds(
   belowPrice: number | undefined,
 ): Promise<boolean> {
   const { rowCount } = await pool.query(
-    `UPDATE alerts SET above_price = $1, below_price = $2 WHERE id = $3 AND user_id = $4`,
+    `UPDATE alerts SET
+       above_price = $1,
+       below_price = $2,
+       last_notified_above_at = CASE WHEN above_price IS DISTINCT FROM $1 THEN NULL ELSE last_notified_above_at END,
+       last_notified_below_at = CASE WHEN below_price IS DISTINCT FROM $2 THEN NULL ELSE last_notified_below_at END
+     WHERE id = $3 AND user_id = $4`,
     [abovePrice ?? null, belowPrice ?? null, id, userId],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+export async function resetBreach(id: string, userId: string, direction: "above" | "below"): Promise<boolean> {
+  const column = direction === "above" ? "last_notified_above_at" : "last_notified_below_at";
+  const { rowCount } = await pool.query(
+    `UPDATE alerts SET ${column} = NULL WHERE id = $1 AND user_id = $2`,
+    [id, userId],
   );
   return (rowCount ?? 0) > 0;
 }

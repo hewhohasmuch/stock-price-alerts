@@ -27,7 +27,7 @@ async function checkPrices(): Promise<void> {
     console.log(`  ${p.symbol}: $${p.price.toFixed(2)}`);
   }
 
-  const triggered = evaluateAlerts(alerts, prices, config.cooldownMinutes);
+  const triggered = evaluateAlerts(alerts, prices);
 
   if (triggered.length === 0) {
     console.log(`  No thresholds crossed.`);
@@ -45,7 +45,6 @@ export function startScheduler(): void {
   console.log("Stock Price Alert Scheduler");
   console.log("==========================");
   console.log(`Schedule: ${config.checkIntervalCron}`);
-  console.log(`Cooldown: ${config.cooldownMinutes} minutes`);
   console.log(`Email:    ${isEmailConfigured() ? "configured" : "not configured"}`);
   console.log(`SMS:      ${isSmsConfigured() ? "configured" : "not configured"}`);
   console.log();
