@@ -119,8 +119,7 @@
     .mono { font-family: monospace; font-size: 12px; color: var(--text-muted); }
 
     .breach-dot {
-      display: inline-block; margin-left: 5px; color: var(--danger);
-      font-size: 11px; cursor: pointer; vertical-align: middle;
+      display: inline-block; margin-left: 5px; cursor: pointer; vertical-align: middle;
       line-height: 1; opacity: 0.85;
     }
     .breach-dot:hover { opacity: 1; }
@@ -618,8 +617,8 @@
             <td data-label="Symbol"><strong>${a.symbol}</strong></td>
             <td data-label="Name" class="name-cell" data-symbol="${a.symbol}">${nameCache[a.symbol] && nameCache[a.symbol] !== a.symbol ? esc(nameCache[a.symbol]) : esc(a.name)}</td>
             <td data-label="Price" class="price-cell" data-symbol="${a.symbol}" style="color:var(--text-muted);">\u2026</td>
-            <td data-label="Above"><span onclick="editThreshold(this, '${a.id}', 'above')" style="cursor:pointer;" title="Click to edit">${fmt(a.abovePrice)}</span>${isToday(a.lastNotifiedAboveAt) ? `<span class="breach-dot" onclick="resetBreach('${a.id}', 'above')" title="Notified today — click to allow another SMS">&#9679;</span>` : ""}</td>
-            <td data-label="Below"><span onclick="editThreshold(this, '${a.id}', 'below')" style="cursor:pointer;" title="Click to edit">${fmt(a.belowPrice)}</span>${isToday(a.lastNotifiedBelowAt) ? `<span class="breach-dot" onclick="resetBreach('${a.id}', 'below')" title="Notified today — click to allow another SMS">&#9679;</span>` : ""}</td>
+            <td data-label="Above"><span onclick="editThreshold(this, '${a.id}', 'above')" style="cursor:pointer;" title="Click to edit">${fmt(a.abovePrice)}</span>${isToday(a.lastNotifiedAboveAt) ? `<span class="breach-dot" onclick="resetBreach('${a.id}', 'above')" title="Notified today — click to allow another SMS"><svg width="18" height="14" viewBox="0 0 18 14" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1,13 8,7 17,1" stroke="#27ae60" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>` : ""}</td>
+            <td data-label="Below"><span onclick="editThreshold(this, '${a.id}', 'below')" style="cursor:pointer;" title="Click to edit">${fmt(a.belowPrice)}</span>${isToday(a.lastNotifiedBelowAt) ? `<span class="breach-dot" onclick="resetBreach('${a.id}', 'below')" title="Notified today — click to allow another SMS"><svg width="18" height="14" viewBox="0 0 18 14" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1,1 8,7 17,13" stroke="#e74c3c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>` : ""}</td>
             <td data-label="Notes" class="notes-cell" data-id="${a.id}">
               <span class="notes-display" onclick="editNotes(this, '${a.id}')" title="${a.notes ? esc(a.notes) : 'Click to edit'}" style="cursor:pointer;min-width:40px;display:inline-block;"><span class="notes-short">${a.notes ? (a.notes.length > 15 ? esc(a.notes.slice(0, 15)) + '\u2026' : esc(a.notes)) : '<em style="color:var(--notes-placeholder)">\u2014</em>'}</span><span class="notes-full">${a.notes ? esc(a.notes) : '<em style="color:var(--notes-placeholder)">\u2014</em>'}</span></span>
             </td>
