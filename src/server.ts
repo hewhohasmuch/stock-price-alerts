@@ -385,8 +385,8 @@ app.get("/api/cron", async (req, res) => {
     return;
   }
   try {
-    await checkPrices();
-    res.json({ ok: true, timestamp: new Date().toISOString() });
+    const result = await checkPrices();
+    res.json({ ok: true, timestamp: new Date().toISOString(), ...result });
   } catch (err) {
     console.error("Cron check failed:", (err as Error).message);
     res.status(500).json({ error: "Price check failed" });

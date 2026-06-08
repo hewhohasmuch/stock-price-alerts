@@ -11,10 +11,13 @@ jobs:
     steps:
       - name: Trigger price check
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+          BODY=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
             "${{ secrets.VERCEL_APP_URL }}/api/cron")
+          STATUS=$(echo "$BODY" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+          RESPONSE=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
           echo "Response status: $STATUS"
+          echo "Response body: $RESPONSE"
           if [ "$STATUS" != "200" ]; then
             echo "Warning: price check returned $STATUS"
             exit 1

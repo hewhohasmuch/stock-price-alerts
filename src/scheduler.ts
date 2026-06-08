@@ -4,12 +4,20 @@ import { getEnabledAlerts } from "./db.js";
 import { fetchPrices } from "./services/price-fetcher.js";
 import { evaluateAlerts } from "./services/alert-evaluator.js";
 import { notify } from "./services/notifier.js";
+import type { NotifyResult } from "./services/notifier.js";
 
-export async function checkPrices(): Promise<void> {
+export interface CheckResult {
+  alertCount: number;
+  priceCount: number;
+  triggeredCount: number;
+  notifications: NotifyResult[];
+}
+
+export async function checkPrices(): Promise<CheckResult> {
   const alerts = await getEnabledAlerts();
   if (alerts.length === 0) {
-    console.log(`[${timestamp()}] No enabled alerts. Add some with: npx tsx src/cli.ts add <SYMBOL> --above <price>`);
-    return;
+    console.log(`[${timestamp()}] No enabled alerts.`);
+    return { alertCount: 0, priceCount: 0, triggeredCount: 0, notifications: [] };
   }
 
   const symbols = [...new Set(alerts.map((a) => a.symbol))];
@@ -20,7 +28,7 @@ export async function checkPrices(): Promise<void> {
     prices = await fetchPrices(symbols);
   } catch (err) {
     console.error(`[${timestamp()}] Failed to fetch prices:`, (err as Error).message);
-    return;
+    return { alertCount: alerts.length, priceCount: 0, triggeredCount: 0, notifications: [] };
   }
 
   for (const p of prices) {
@@ -31,10 +39,11 @@ export async function checkPrices(): Promise<void> {
 
   if (triggered.length === 0) {
     console.log(`  No thresholds crossed.`);
-    return;
+    return { alertCount: alerts.length, priceCount: prices.length, triggeredCount: 0, notifications: [] };
   }
 
-  await notify(triggered);
+  const notifications = await notify(triggered);
+  return { alertCount: alerts.length, priceCount: prices.length, triggeredCount: triggered.length, notifications };
 }
 
 function timestamp(): string {
