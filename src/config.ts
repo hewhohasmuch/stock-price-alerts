@@ -22,6 +22,8 @@ export const config = {
   notifySms: process.env.NOTIFY_SMS,
   checkIntervalCron: process.env.CHECK_INTERVAL_CRON || "*/5 * * * *",
   cooldownMinutes: Number(process.env.COOLDOWN_MINUTES || 60),
+  alpacaApiKey: process.env.ALPACA_API_KEY,
+  alpacaSecretKey: process.env.ALPACA_SECRET_KEY,
 };
 
 export function isEmailConfigured(): boolean {
