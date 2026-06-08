@@ -5,6 +5,7 @@ import { fetchPrices } from "./services/price-fetcher.js";
 import { evaluateAlerts } from "./services/alert-evaluator.js";
 import { notify } from "./services/notifier.js";
 import type { NotifyResult } from "./services/notifier.js";
+import { isMarketOpen } from "./utils/market-hours.js";
 
 export interface CheckResult {
   alertCount: number;
@@ -62,7 +63,11 @@ export function startScheduler(): void {
   checkPrices();
 
   // Then schedule recurring checks
-  cron.schedule(config.checkIntervalCron, () => {
+  cron.schedule(config.checkIntervalCron, async () => {
+    if (!await isMarketOpen()) {
+      console.log(`[${timestamp()}] Market closed — skipping price check.`);
+      return;
+    }
     checkPrices();
   });
 

@@ -12,6 +12,7 @@ import {
 } from "./db.js";
 import { fetchSinglePrice, fetchPrices } from "./services/price-fetcher.js";
 import { checkPrices } from "./scheduler.js";
+import { isMarketOpen } from "./utils/market-hours.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -385,6 +386,11 @@ app.get("/api/cron", async (req, res) => {
     return;
   }
   try {
+    if (!await isMarketOpen()) {
+      console.log("[cron] Market closed — skipping price check.");
+      res.json({ ok: true, timestamp: new Date().toISOString(), skipped: true, reason: "market_closed" });
+      return;
+    }
     const result = await checkPrices();
     res.json({ ok: true, timestamp: new Date().toISOString(), ...result });
   } catch (err) {
