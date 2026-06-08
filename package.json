@@ -4,6 +4,7 @@
   "description": "CLI tool that monitors stock prices and sends email/SMS alerts when prices cross user-defined thresholds",
   "type": "module",
   "scripts": {
+    "build": "tsc --noEmit",
     "start": "tsx src/scheduler.ts",
     "cli": "tsx src/cli.ts",
     "web": "tsx src/server.ts"
@@ -30,6 +31,7 @@
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^6.4.17",
     "@types/pg": "^8.16.0",
+    "@vercel/node": "^5.8.12",
     "typescript": "^5.7.3"
   }
 }

@@ -11,7 +11,7 @@ import {
   updateAlertThresholds, resetBreach, createUser, verifyUser,
 } from "./db.js";
 import { fetchSinglePrice, fetchPrices } from "./services/price-fetcher.js";
-import { startScheduler } from "./scheduler.js";
+import { checkPrices } from "./scheduler.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -22,7 +22,7 @@ declare module "express-session" {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const isProduction = process.env.NODE_ENV === "production";
 
 // ── Session secret validation ────────────────────────────────────────────
@@ -366,20 +366,34 @@ app.get("/api/price/:symbol", requireAuth, async (req, res) => {
   }
 });
 
-initDb()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Dashboard running at http://localhost:${PORT}`);
-      try {
-        startScheduler();
-      } catch (err) {
-        console.error("Failed to start scheduler:", (err as Error).message);
-        console.error("The web dashboard will continue running without automatic price checks.");
-      }
+// ── Cron endpoint (called by GitHub Actions every 5 min) ─────────────────
+app.get("/api/cron", async (req, res) => {
+  const secret = req.headers["x-cron-secret"];
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  try {
+    await checkPrices();
+    res.json({ ok: true, timestamp: new Date().toISOString() });
+  } catch (err) {
+    console.error("Cron check failed:", (err as Error).message);
+    res.status(500).json({ error: "Price check failed" });
+  }
+});
 
-    });
-  })
-  .catch((err) => {
-    console.error("FATAL: Failed to initialize database:", (err as Error).message);
-    process.exit(1);
+try {
+  await initDb();
+} catch (err) {
+  console.error("FATAL: Failed to initialize database:", (err as Error).message);
+  process.exit(1);
+}
+
+export default app;
+
+// Only start the HTTP server when run directly (local dev: npm run web)
+if (process.argv[1]?.includes("server")) {
+  app.listen(PORT, () => {
+    console.log(`Dashboard running at http://localhost:${PORT}`);
   });
+}

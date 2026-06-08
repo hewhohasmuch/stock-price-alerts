@@ -1,4 +1,4 @@
-name: Keep Render Service Alive
+name: Price Check
 
 on:
   schedule:
@@ -6,14 +6,16 @@ on:
   workflow_dispatch:        # allow manual trigger
 
 jobs:
-  ping:
+  check:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping health endpoint
+      - name: Trigger price check
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://stock-price-alerts.onrender.com/health")
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.VERCEL_APP_URL }}/api/cron")
           echo "Response status: $STATUS"
           if [ "$STATUS" != "200" ]; then
-            echo "Warning: health check returned $STATUS"
+            echo "Warning: price check returned $STATUS"
             exit 1
           fi
