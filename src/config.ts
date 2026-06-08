@@ -5,7 +5,8 @@ import "dotenv/config";
 dns.setDefaultResultOrder("ipv4first");
 
 export const config = {
-  databaseUrl: process.env.DATABASE_URL || "postgresql://localhost:5432/stock_alerts",
+  // Prefer unpooled connection on Neon/Vercel (pooled connection blocks startup params)
+  databaseUrl: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL || "postgresql://localhost:5432/stock_alerts",
   smtp: {
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 587),

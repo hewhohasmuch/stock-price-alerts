@@ -28,9 +28,7 @@ const isProduction = process.env.NODE_ENV === "production";
 // ── Session secret validation ────────────────────────────────────────────
 const sessionSecret = process.env.SESSION_SECRET;
 if (isProduction && !sessionSecret) {
-  console.error("FATAL: SESSION_SECRET environment variable is required in production.");
-  console.error("Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"");
-  process.exit(1);
+  throw new Error("SESSION_SECRET environment variable is required in production. Generate with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"");
 }
 if (!sessionSecret) {
   console.warn("WARNING: SESSION_SECRET is not set. Using a random secret — sessions will not survive restarts.");
@@ -67,6 +65,18 @@ app.use(
 );
 
 app.use(express.static(join(__dirname, "..", "public")));
+
+// ── Lazy DB initialization (serverless-safe, runs once on first request) ──
+let dbInitPromise: Promise<void> | null = null;
+app.use((_req, _res, next) => {
+  if (!dbInitPromise) {
+    dbInitPromise = initDb().catch((err) => {
+      dbInitPromise = null; // allow retry on next request
+      throw err;
+    });
+  }
+  dbInitPromise.then(() => next()).catch(next);
+});
 
 // ── Rate limiting for auth endpoints ─────────────────────────────────────
 
@@ -369,7 +379,8 @@ app.get("/api/price/:symbol", requireAuth, async (req, res) => {
 // ── Cron endpoint (called by GitHub Actions every 5 min) ─────────────────
 app.get("/api/cron", async (req, res) => {
   const secret = req.headers["x-cron-secret"];
-  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+  const storedSecret = process.env.CRON_SECRET?.trim();
+  if (!storedSecret || secret !== storedSecret) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -381,13 +392,6 @@ app.get("/api/cron", async (req, res) => {
     res.status(500).json({ error: "Price check failed" });
   }
 });
-
-try {
-  await initDb();
-} catch (err) {
-  console.error("FATAL: Failed to initialize database:", (err as Error).message);
-  process.exit(1);
-}
 
 export default app;
 
