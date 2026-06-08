@@ -493,7 +493,9 @@
 
     function editNotes(span, id) {
       const cell = span.parentElement;
-      const current = span.textContent === "\u2014" ? "" : span.textContent;
+      const fullSpan = span.querySelector('.notes-full');
+      const raw = fullSpan ? fullSpan.textContent : span.textContent;
+      const current = raw === "\u2014" ? "" : raw;
       cell.innerHTML = `
         <textarea maxlength="50" style="padding:4px;border:1px solid var(--primary);border-radius:4px;font-size:13px;width:140px;height:32px;resize:none;font-family:inherit;background:var(--input-bg);color:var(--text);">${esc(current)}</textarea>
         <button class="btn-primary" style="padding:4px 8px;font-size:12px;margin-left:4px;" onclick="saveNotes('${id}', this)">Save</button>
