@@ -98,6 +98,7 @@
     .btn-primary { background: var(--primary); color: #fff; }
     .btn-secondary { background: var(--card-bg); color: var(--text); border: 1px solid var(--border); }
     .btn-secondary:hover { background: var(--border); opacity: 1; }
+    input[readonly] { background: var(--card-bg); cursor: default; color: var(--text-muted, #888); }
     .btn-danger { background: var(--danger); color: #fff; }
     .btn-toggle { background: #f0ad4e; color: #fff; }
     .btn-enable { background: #27ae60; color: #fff; }
@@ -348,9 +349,12 @@
       <form id="settingsForm">
         <div class="form-group" style="margin-bottom: 14px;">
           <label for="settingsEmail">Notification Email</label>
-          <input id="settingsEmail" type="email" placeholder="you@example.com" style="width: 100%; max-width: 320px;">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <input id="settingsEmail" type="email" placeholder="you@example.com" style="width: 100%; max-width: 320px;" readonly>
+            <button type="button" id="editEmailBtn" class="btn-secondary" onclick="enableEmailEdit()">Edit Email</button>
+          </div>
         </div>
-        <button type="submit" class="btn-primary" id="settingsBtn">Save Email</button>
+        <button type="submit" class="btn-primary hidden" id="settingsBtn">Save Email</button>
         <div id="settingsError" class="error-msg"></div>
         <div id="settingsSuccess" class="success-msg hidden">Email saved successfully.</div>
       </form>
@@ -425,8 +429,26 @@
       noEmailModal.classList.add("hidden");
       settingsScreen.classList.remove("hidden");
       headerRight.classList.remove("hidden");
-      document.getElementById("settingsEmail").value = (currentUser && currentUser.notificationEmail) || "";
+      const emailVal = (currentUser && currentUser.notificationEmail) || "";
+      document.getElementById("settingsEmail").value = emailVal;
       document.getElementById("settingsError").textContent = "";
+      document.getElementById("settingsSuccess").classList.add("hidden");
+      if (emailVal) {
+        document.getElementById("settingsEmail").readOnly = true;
+        document.getElementById("editEmailBtn").classList.remove("hidden");
+        document.getElementById("settingsBtn").classList.add("hidden");
+      } else {
+        document.getElementById("settingsEmail").readOnly = false;
+        document.getElementById("editEmailBtn").classList.add("hidden");
+        document.getElementById("settingsBtn").classList.remove("hidden");
+      }
+    }
+
+    function enableEmailEdit() {
+      document.getElementById("settingsEmail").readOnly = false;
+      document.getElementById("settingsEmail").focus();
+      document.getElementById("editEmailBtn").classList.add("hidden");
+      document.getElementById("settingsBtn").classList.remove("hidden");
       document.getElementById("settingsSuccess").classList.add("hidden");
     }
 
@@ -521,6 +543,9 @@
         }
         currentUser.notificationEmail = email;
         settingsSuccess.classList.remove("hidden");
+        document.getElementById("settingsEmail").readOnly = true;
+        document.getElementById("editEmailBtn").classList.remove("hidden");
+        document.getElementById("settingsBtn").classList.add("hidden");
       } catch {
         settingsError.textContent = "Network error.";
       } finally {
