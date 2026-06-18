@@ -285,30 +285,32 @@
   <div id="dashboard" class="container hidden">
     <div class="card">
       <h2>Add Alert</h2>
-      <form id="addForm">
-        <div class="form-row">
+      <form id="addForm" style="display:flex;flex-direction:column;gap:10px;">
           <div class="form-group">
             <label for="symbol">Symbol</label>
             <div style="display:flex;gap:6px;align-items:center;">
-              <input id="symbol" type="text" placeholder="AAPL" required style="text-transform:uppercase;">
+              <input id="symbol" type="text" placeholder="AAPL" required style="text-transform:uppercase;width:48px;">
               <button type="button" id="lookupBtn" class="btn-secondary" onclick="lookupSymbol()">Lookup</button>
             </div>
-            <div id="lookupInfo" style="font-size:12px;min-height:16px;margin-top:3px;"></div>
           </div>
-          <div class="form-group">
-            <label for="above">Above Price ($)</label>
-            <input id="above" type="number" step="0.01" placeholder="250.00">
-          </div>
-          <div class="form-group">
-            <label for="below">Below Price ($)</label>
-            <input id="below" type="number" step="0.01" placeholder="200.00">
+          <div id="lookupInfo" style="font-size:13px;min-height:36px;text-align:center;line-height:1.7;"></div>
+          <div style="display:flex;gap:10px;align-items:flex-end;">
+            <div class="form-group">
+              <label for="above">Above ($)</label>
+              <input id="above" type="number" step="0.01" placeholder="250.00" style="width:70px;">
+            </div>
+            <div class="form-group">
+              <label for="below">Below ($)</label>
+              <input id="below" type="number" step="0.01" placeholder="200.00" style="width:70px;">
+            </div>
           </div>
           <div class="form-group">
             <label for="notes">Notes</label>
-            <textarea id="notes" maxlength="50" placeholder="Optional notes" style="padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;width:180px;height:36px;resize:none;font-family:inherit;background:var(--input-bg);color:var(--text);" class="notes-input"></textarea>
+            <textarea id="notes" rows="2" maxlength="50" placeholder="Optional notes" style="padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;width:180px;resize:none;font-family:inherit;background:var(--input-bg);color:var(--text);" class="notes-input"></textarea>
           </div>
-          <button type="submit" class="btn-primary" id="addBtn">Add Alert</button>
-        </div>
+          <div>
+            <button type="submit" class="btn-primary" id="addBtn">Add Alert</button>
+          </div>
         <div id="formError" class="error-msg"></div>
       </form>
     </div>
@@ -859,7 +861,7 @@
         } else {
           const { name, price } = await res.json();
           info.style.color = "var(--text-secondary)";
-          info.textContent = `${name} — $${price.toFixed(2)}`;
+          info.innerHTML = `<div>${name}</div><div>Price: $${price.toFixed(2)}</div>`;
         }
       } catch {
         info.style.color = "var(--danger)";
