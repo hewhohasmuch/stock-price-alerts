@@ -21,6 +21,11 @@ function getTransporter(): nodemailer.Transporter {
 
 export async function sendEmailAlert(triggered: TriggeredAlert): Promise<void> {
   const { alert, currentPrice, direction, threshold } = triggered;
+
+  if (!alert.userEmail) {
+    throw new Error("No notification email configured for this user");
+  }
+
   const arrow = direction === "above" ? "above" : "below";
 
   const subject = `Stock Alert: ${alert.symbol} is ${arrow} $${threshold}`;
@@ -34,7 +39,7 @@ export async function sendEmailAlert(triggered: TriggeredAlert): Promise<void> {
 
   await getTransporter().sendMail({
     from: config.smtp.user,
-    to: config.notifyEmail,
+    to: alert.userEmail,
     subject,
     text,
   });

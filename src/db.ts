@@ -54,6 +54,9 @@ export async function initDb(): Promise<void> {
     -- Migration: add per-direction cooldown columns to existing tables
     ALTER TABLE alerts ADD COLUMN IF NOT EXISTS last_notified_above_at TIMESTAMPTZ;
     ALTER TABLE alerts ADD COLUMN IF NOT EXISTS last_notified_below_at TIMESTAMPTZ;
+
+    -- Migration: add per-user notification email
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_email TEXT;
   `);
 }
 
@@ -108,7 +111,7 @@ export async function createUser(username: string, password: string): Promise<Us
     const { rows } = await pool.query(
       `INSERT INTO users (id, username, password_hash)
        VALUES ($1, $2, $3)
-       RETURNING id, username, password_hash AS "passwordHash", created_at AS "createdAt"`,
+       RETURNING id, username, password_hash AS "passwordHash", notification_email AS "notificationEmail", created_at AS "createdAt"`,
       [id, username, passwordHash],
     );
     return { ...rows[0], createdAt: rows[0].createdAt.toISOString() };
@@ -120,7 +123,7 @@ export async function createUser(username: string, password: string): Promise<Us
 
 export async function verifyUser(username: string, password: string): Promise<User | null> {
   const { rows } = await pool.query(
-    `SELECT id, username, password_hash AS "passwordHash", created_at AS "createdAt"
+    `SELECT id, username, password_hash AS "passwordHash", notification_email AS "notificationEmail", created_at AS "createdAt"
      FROM users WHERE LOWER(username) = LOWER($1)`,
     [username],
   );
@@ -133,7 +136,7 @@ export async function verifyUser(username: string, password: string): Promise<Us
 
 export async function findUserById(id: string): Promise<User | null> {
   const { rows } = await pool.query(
-    `SELECT id, username, password_hash AS "passwordHash", created_at AS "createdAt"
+    `SELECT id, username, password_hash AS "passwordHash", notification_email AS "notificationEmail", created_at AS "createdAt"
      FROM users WHERE id = $1`,
     [id],
   );
@@ -143,12 +146,19 @@ export async function findUserById(id: string): Promise<User | null> {
 
 export async function findUserByUsername(username: string): Promise<User | null> {
   const { rows } = await pool.query(
-    `SELECT id, username, password_hash AS "passwordHash", created_at AS "createdAt"
+    `SELECT id, username, password_hash AS "passwordHash", notification_email AS "notificationEmail", created_at AS "createdAt"
      FROM users WHERE LOWER(username) = LOWER($1)`,
     [username],
   );
   if (rows.length === 0) return null;
   return { ...rows[0], createdAt: rows[0].createdAt.toISOString() };
+}
+
+export async function updateUserNotificationEmail(userId: string, email: string): Promise<void> {
+  await pool.query(
+    `UPDATE users SET notification_email = $1 WHERE id = $2`,
+    [email, userId],
+  );
 }
 
 // ── Alert functions ─────────────────────────────────────────────────────
@@ -167,6 +177,7 @@ function rowToAlert(row: any): StockAlert {
     lastNotifiedAboveAt: row.lastNotifiedAboveAt ? row.lastNotifiedAboveAt.toISOString() : undefined,
     lastNotifiedBelowAt: row.lastNotifiedBelowAt ? row.lastNotifiedBelowAt.toISOString() : undefined,
     createdAt: row.createdAt.toISOString(),
+    userEmail: row.userEmail ?? undefined,
   };
 }
 
@@ -215,7 +226,17 @@ export async function listAlerts(userId: string): Promise<StockAlert[]> {
 
 export async function getEnabledAlerts(): Promise<StockAlert[]> {
   const { rows } = await pool.query(
-    `SELECT ${ALERT_COLUMNS} FROM alerts WHERE enabled = true`,
+    `SELECT
+       a.id, a.user_id AS "userId", a.symbol, a.name,
+       a.above_price AS "abovePrice", a.below_price AS "belowPrice",
+       a.notes, a.enabled, a.last_notified_at AS "lastNotifiedAt",
+       a.last_notified_above_at AS "lastNotifiedAboveAt",
+       a.last_notified_below_at AS "lastNotifiedBelowAt",
+       a.created_at AS "createdAt",
+       u.notification_email AS "userEmail"
+     FROM alerts a
+     JOIN users u ON u.id = a.user_id
+     WHERE a.enabled = true`,
   );
   return rows.map(rowToAlert);
 }

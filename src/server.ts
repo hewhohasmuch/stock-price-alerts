@@ -9,6 +9,7 @@ import {
   initDb, pool, checkRateLimit,
   listAlerts, addAlert, removeAlert, setAlertEnabled, updateAlertNotes,
   updateAlertThresholds, resetBreach, createUser, verifyUser,
+  findUserById, updateUserNotificationEmail,
 } from "./db.js";
 import { fetchSinglePrice, fetchPrices } from "./services/price-fetcher.js";
 import { checkPrices } from "./scheduler.js";
@@ -167,12 +168,48 @@ app.post("/api/auth/logout", (req, res) => {
   });
 });
 
-app.get("/api/auth/me", (req, res) => {
+app.get("/api/auth/me", async (req, res) => {
   if (!req.session.userId) {
     res.status(401).json({ error: "Not authenticated" });
     return;
   }
-  res.json({ id: req.session.userId, username: req.session.username });
+  try {
+    const user = await findUserById(req.session.userId);
+    res.json({
+      id: req.session.userId,
+      username: req.session.username,
+      notificationEmail: user?.notificationEmail ?? null,
+    });
+  } catch (err) {
+    console.error("GET /api/auth/me error:", err);
+    res.status(500).json({ error: "Failed to fetch user" });
+  }
+});
+
+// ── Settings routes ─────────────────────────────────────────────────────
+
+app.patch("/api/settings/email", async (req, res) => {
+  if (!req.session.userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+  try {
+    const { email } = req.body;
+    if (typeof email !== "string" || !email.trim()) {
+      res.status(400).json({ error: "email is required" });
+      return;
+    }
+    const trimmed = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      res.status(400).json({ error: "Invalid email address" });
+      return;
+    }
+    await updateUserNotificationEmail(req.session.userId, trimmed);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("PATCH /api/settings/email error:", err);
+    res.status(500).json({ error: "Failed to update email" });
+  }
 });
 
 // ── Auth middleware ──────────────────────────────────────────────────────

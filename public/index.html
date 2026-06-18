@@ -64,6 +64,8 @@
     .header-right span { font-size: 14px; opacity: 0.8; }
     .btn-logout { background: rgba(255,255,255,0.15); color: #fff; border: none; padding: 6px 14px; border-radius: 4px; font-size: 13px; cursor: pointer; }
     .btn-logout:hover { background: rgba(255,255,255,0.25); }
+    .btn-settings { background: rgba(255,255,255,0.15); color: #fff; border: none; padding: 6px 14px; border-radius: 4px; font-size: 13px; cursor: pointer; }
+    .btn-settings:hover { background: rgba(255,255,255,0.25); }
     .btn-theme { background: rgba(255,255,255,0.15); color: #fff; border: none; cursor: pointer; padding: 6px; border-radius: 4px; line-height: 1; display: flex; align-items: center; }
     .btn-theme:hover { background: rgba(255,255,255,0.25); opacity: 1; }
 
@@ -142,6 +144,25 @@
     .auth-toggle a:hover { text-decoration: underline; }
 
     .hidden { display: none !important; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+      display: flex; align-items: center; justify-content: center; z-index: 1000;
+    }
+    .modal-card {
+      background: var(--surface); border-radius: 10px; box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+      padding: 32px 28px; max-width: 380px; width: 90%; text-align: center;
+    }
+    .modal-card h3 { font-size: 18px; margin-bottom: 12px; color: var(--text); }
+    .modal-card p { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5; }
+    .modal-card a { color: var(--primary); font-weight: 600; cursor: pointer; text-decoration: none; font-size: 14px; }
+    .modal-card a:hover { text-decoration: underline; }
+
+    /* Settings screen */
+    .settings-back { font-size: 13px; color: var(--primary); cursor: pointer; text-decoration: none; display: inline-block; margin-bottom: 16px; }
+    .settings-back:hover { text-decoration: underline; }
+    .success-msg { color: #27ae60; font-size: 13px; margin-top: 8px; }
 
     /* ── Mobile responsive ──────────────────────────────────────────── */
     @media (max-width: 640px) {
@@ -229,6 +250,7 @@
       </button>
       <div class="header-right hidden" id="headerRight">
         <span id="headerUser"></span>
+        <button class="btn-settings" onclick="showSettings()">Settings</button>
         <button class="btn-logout" onclick="logout()">Log out</button>
       </div>
     </div>
@@ -308,22 +330,51 @@
     </div>
   </div>
 
+  <!-- Settings screen -->
+  <div id="settingsScreen" class="container hidden">
+    <a class="settings-back" onclick="showDashboard()">&#8592; Back to Dashboard</a>
+    <div class="card">
+      <h2>Account Settings</h2>
+      <form id="settingsForm">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label for="settingsEmail">Notification Email</label>
+          <input id="settingsEmail" type="email" placeholder="you@example.com" style="width: 100%; max-width: 320px;">
+        </div>
+        <button type="submit" class="btn-primary" id="settingsBtn">Save Email</button>
+        <div id="settingsError" class="error-msg"></div>
+        <div id="settingsSuccess" class="success-msg hidden">Email saved successfully.</div>
+      </form>
+    </div>
+  </div>
+
+  <!-- No-email modal -->
+  <div id="noEmailModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3>Email Required</h3>
+      <p>An email address is needed for sending alerts to your inbox!</p>
+      <a onclick="goToSettings()">Go to Settings</a>
+    </div>
+  </div>
+
   <script>
     // ── Auth state ────────────────────────────────────────────────────────
     let isRegisterMode = false;
+    let currentUser = null;
 
-    const authScreen   = document.getElementById("authScreen");
-    const dashboard    = document.getElementById("dashboard");
-    const headerRight  = document.getElementById("headerRight");
-    const headerUser   = document.getElementById("headerUser");
-    const authForm     = document.getElementById("authForm");
-    const authTitle    = document.getElementById("authTitle");
-    const authBtn      = document.getElementById("authBtn");
-    const authError    = document.getElementById("authError");
+    const authScreen     = document.getElementById("authScreen");
+    const dashboard      = document.getElementById("dashboard");
+    const settingsScreen = document.getElementById("settingsScreen");
+    const noEmailModal   = document.getElementById("noEmailModal");
+    const headerRight    = document.getElementById("headerRight");
+    const headerUser     = document.getElementById("headerUser");
+    const authForm       = document.getElementById("authForm");
+    const authTitle      = document.getElementById("authTitle");
+    const authBtn        = document.getElementById("authBtn");
+    const authError      = document.getElementById("authError");
     const authToggleText = document.getElementById("authToggleText");
     const authToggleLink = document.getElementById("authToggleLink");
-    const authUsername  = document.getElementById("authUsername");
-    const authPassword  = document.getElementById("authPassword");
+    const authUsername   = document.getElementById("authUsername");
+    const authPassword   = document.getElementById("authPassword");
 
     function toggleAuthMode() {
       isRegisterMode = !isRegisterMode;
@@ -338,15 +389,40 @@
     function showAuth() {
       authScreen.classList.remove("hidden");
       dashboard.classList.add("hidden");
+      settingsScreen.classList.add("hidden");
+      noEmailModal.classList.add("hidden");
       headerRight.classList.add("hidden");
+      currentUser = null;
     }
 
-    function showDashboard(username) {
+    function showDashboard() {
       authScreen.classList.add("hidden");
+      settingsScreen.classList.add("hidden");
       dashboard.classList.remove("hidden");
       headerRight.classList.remove("hidden");
-      headerUser.textContent = username;
+      headerUser.textContent = currentUser ? currentUser.username : "";
+      if (currentUser && !currentUser.notificationEmail) {
+        noEmailModal.classList.remove("hidden");
+      } else {
+        noEmailModal.classList.add("hidden");
+      }
       loadAlerts();
+    }
+
+    function showSettings() {
+      authScreen.classList.add("hidden");
+      dashboard.classList.add("hidden");
+      noEmailModal.classList.add("hidden");
+      settingsScreen.classList.remove("hidden");
+      headerRight.classList.remove("hidden");
+      document.getElementById("settingsEmail").value = (currentUser && currentUser.notificationEmail) || "";
+      document.getElementById("settingsError").textContent = "";
+      document.getElementById("settingsSuccess").classList.add("hidden");
+    }
+
+    function goToSettings() {
+      noEmailModal.classList.add("hidden");
+      showSettings();
     }
 
     authForm.addEventListener("submit", async (e) => {
@@ -371,7 +447,10 @@
           authError.textContent = data.error || "Something went wrong.";
           return;
         }
-        showDashboard(data.username);
+        // Fetch full user profile (includes notificationEmail)
+        const meRes = await fetch("/api/auth/me");
+        currentUser = meRes.ok ? await meRes.json() : { id: data.id, username: data.username, notificationEmail: null };
+        showDashboard();
       } catch {
         authError.textContent = "Network error.";
       } finally {
@@ -391,8 +470,8 @@
       try {
         const res = await fetch("/api/auth/me");
         if (res.ok) {
-          const data = await res.json();
-          showDashboard(data.username);
+          currentUser = await res.json();
+          showDashboard();
         } else {
           showAuth();
         }
@@ -400,6 +479,45 @@
         showAuth();
       }
     }
+
+    // ── Settings logic ────────────────────────────────────────────────────
+
+    document.getElementById("settingsForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const settingsError = document.getElementById("settingsError");
+      const settingsSuccess = document.getElementById("settingsSuccess");
+      const settingsBtn = document.getElementById("settingsBtn");
+      settingsError.textContent = "";
+      settingsSuccess.classList.add("hidden");
+
+      const email = document.getElementById("settingsEmail").value.trim();
+      if (!email) {
+        settingsError.textContent = "Please enter an email address.";
+        return;
+      }
+
+      settingsBtn.disabled = true;
+      settingsBtn.textContent = "Saving...";
+      try {
+        const res = await fetch("/api/settings/email", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          settingsError.textContent = data.error || "Failed to save email.";
+          return;
+        }
+        currentUser.notificationEmail = email;
+        settingsSuccess.classList.remove("hidden");
+      } catch {
+        settingsError.textContent = "Network error.";
+      } finally {
+        settingsBtn.disabled = false;
+        settingsBtn.textContent = "Save Email";
+      }
+    });
 
     // ── Dashboard logic ──────────────────────────────────────────────────
 

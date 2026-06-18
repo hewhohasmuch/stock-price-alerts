@@ -18,7 +18,6 @@ export const config = {
     authToken: process.env.TWILIO_AUTH_TOKEN,
     fromNumber: process.env.TWILIO_FROM_NUMBER,
   },
-  notifyEmail: process.env.NOTIFY_EMAIL,
   notifySms: process.env.NOTIFY_SMS,
   checkIntervalCron: process.env.CHECK_INTERVAL_CRON || "*/5 * * * *",
   cooldownMinutes: Number(process.env.COOLDOWN_MINUTES || 60),
@@ -27,7 +26,7 @@ export const config = {
 };
 
 export function isEmailConfigured(): boolean {
-  return !!(config.smtp.host && config.smtp.user && config.smtp.pass && config.notifyEmail);
+  return !!(config.smtp.host && config.smtp.user && config.smtp.pass);
 }
 
 export function isSmsConfigured(): boolean {

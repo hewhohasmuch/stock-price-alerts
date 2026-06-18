@@ -2,6 +2,7 @@ export interface User {
   id: string;
   username: string;
   passwordHash: string;
+  notificationEmail?: string;
   createdAt: string;
 }
 
@@ -18,6 +19,7 @@ export interface StockAlert {
   lastNotifiedAboveAt?: string;
   lastNotifiedBelowAt?: string;
   createdAt: string;
+  userEmail?: string;
 }
 
 export interface Settings {
