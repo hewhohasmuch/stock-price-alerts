@@ -94,6 +94,8 @@
     button:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .btn-primary { background: var(--primary); color: #fff; }
+    .btn-secondary { background: var(--card-bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); opacity: 1; }
     .btn-danger { background: var(--danger); color: #fff; }
     .btn-toggle { background: #f0ad4e; color: #fff; }
     .btn-enable { background: #27ae60; color: #fff; }
@@ -287,7 +289,11 @@
         <div class="form-row">
           <div class="form-group">
             <label for="symbol">Symbol</label>
-            <input id="symbol" type="text" placeholder="AAPL" required style="text-transform:uppercase;">
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input id="symbol" type="text" placeholder="AAPL" required style="text-transform:uppercase;">
+              <button type="button" id="lookupBtn" class="btn-secondary" onclick="lookupSymbol()">Lookup</button>
+            </div>
+            <div id="lookupInfo" style="font-size:12px;min-height:16px;margin-top:3px;"></div>
           </div>
           <div class="form-group">
             <label for="above">Above Price ($)</label>
@@ -787,6 +793,7 @@
           return;
         }
         addForm.reset();
+        document.getElementById("lookupInfo").textContent = "";
         await loadAlerts();
       } catch {
         formError.textContent = "Network error.";
@@ -831,6 +838,37 @@
     }
 
     updateThemeIcon();
+
+    async function lookupSymbol() {
+      const sym = document.getElementById("symbol").value.trim().toUpperCase();
+      const info = document.getElementById("lookupInfo");
+      const btn = document.getElementById("lookupBtn");
+      if (!sym) {
+        info.style.color = "var(--danger)";
+        info.textContent = "Enter a symbol first.";
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = "Loading…";
+      info.textContent = "";
+      try {
+        const res = await fetch(`/api/price/${encodeURIComponent(sym)}`);
+        if (!res.ok) {
+          info.style.color = "var(--danger)";
+          info.textContent = "Symbol not found!";
+        } else {
+          const { name, price } = await res.json();
+          info.style.color = "var(--text-secondary)";
+          info.textContent = `${name} — $${price.toFixed(2)}`;
+        }
+      } catch {
+        info.style.color = "var(--danger)";
+        info.textContent = "Lookup failed. Try again.";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Lookup";
+      }
+    }
 
     // ── Boot ──────────────────────────────────────────────────────────────
     updateSortArrows();
