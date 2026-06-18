@@ -650,7 +650,7 @@
       const raw = fullSpan ? fullSpan.textContent : span.textContent;
       const current = raw === "\u2014" ? "" : raw;
       cell.innerHTML = `
-        <textarea maxlength="50" style="padding:4px;border:1px solid var(--primary);border-radius:4px;font-size:13px;width:140px;height:32px;resize:none;font-family:inherit;background:var(--input-bg);color:var(--text);">${esc(current)}</textarea>
+        <textarea maxlength="50" style="padding:4px;border:1px solid var(--primary);border-radius:4px;font-size:16px;width:140px;height:32px;resize:none;font-family:inherit;background:var(--input-bg);color:var(--text);">${esc(current)}</textarea>
         <button class="btn-primary" style="padding:4px 8px;font-size:12px;margin-left:4px;" onclick="saveNotes('${id}', this)">Save</button>
       `;
       cell.querySelector("textarea").focus();
@@ -679,7 +679,7 @@
       const cell = span.parentElement;
       const current = span.textContent === "\u2014" ? "" : span.textContent.replace("$", "");
       cell.innerHTML = `
-        <input type="number" step="0.01" value="${esc(current)}" style="padding:4px;border:1px solid var(--primary);border-radius:4px;font-size:13px;width:80px;background:var(--input-bg);color:var(--text);">
+        <input type="number" step="0.01" value="${esc(current)}" style="padding:4px;border:1px solid var(--primary);border-radius:4px;font-size:16px;width:80px;background:var(--input-bg);color:var(--text);">
         <button class="btn-primary" style="padding:4px 8px;font-size:12px;margin-left:4px;" onclick="saveThreshold('${id}', '${field}', this)">Save</button>
       `;
       cell.querySelector("input").focus();
