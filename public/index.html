@@ -61,10 +61,12 @@
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); transition: background-color 0.2s, color 0.2s; }
 
     header {
-      background: var(--header-bg); color: #fff; padding: 8px 24px;
+      background: var(--header-bg); color: #fff; padding: 8px 24px 8px 10px;
       display: flex; align-items: center; gap: 12px; justify-content: space-between;
     }
+    .header-brand { display: flex; align-items: center; gap: 10px; }
     .header-logo { height: 64px; width: auto; display: block; }
+    .header-title { font-size: 18px; font-weight: 600; line-height: 1.2; }
     .header-controls { display: flex; align-items: center; gap: 8px; }
     .header-right { display: flex; align-items: center; gap: 12px; }
     .header-user-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
@@ -178,8 +180,9 @@
 
     /* ── Mobile responsive ──────────────────────────────────────────── */
     @media (max-width: 640px) {
-      header { padding: 6px 16px; }
+      header { padding: 6px 16px 6px 8px; }
       .header-logo { height: 48px; }
+      .header-title { font-size: 15px; }
       .header-right span { font-size: 12px; }
 
       .container { padding: 0 10px; margin: 12px auto; }
@@ -255,7 +258,10 @@
 </head>
 <body>
   <header>
-    <img src="/pin-ping-transparent-512.png" alt="Stock Price Alert Dashboard" class="header-logo">
+    <div class="header-brand">
+      <img src="/pin-ping-transparent-512.png" alt="" class="header-logo">
+      <span class="header-title">Price<br>Alert</span>
+    </div>
     <div class="header-controls">
       <button class="btn-theme" id="themeToggle" onclick="toggleTheme()" title="Toggle dark mode">
         <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
