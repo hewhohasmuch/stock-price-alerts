@@ -64,8 +64,10 @@
       background: var(--header-bg); color: #fff; padding: 16px 24px;
       display: flex; align-items: center; gap: 12px; justify-content: space-between;
     }
-    header h1 { font-size: 20px; font-weight: 600; }
+    .header-logo { height: 44px; width: auto; display: block; }
+    .header-controls { display: flex; align-items: center; gap: 8px; }
     .header-right { display: flex; align-items: center; gap: 12px; }
+    .header-user-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
     .header-right span { font-size: 14px; opacity: 0.8; }
     .btn-logout { background: rgba(255,255,255,0.15); color: #fff; border: none; padding: 6px 14px; border-radius: 4px; font-size: 13px; cursor: pointer; }
     .btn-logout:hover { background: rgba(255,255,255,0.25); }
@@ -177,7 +179,7 @@
     /* ── Mobile responsive ──────────────────────────────────────────── */
     @media (max-width: 640px) {
       header { padding: 12px 16px; }
-      header h1 { font-size: 16px; }
+      .header-logo { height: 32px; }
       .header-right span { font-size: 12px; }
 
       .container { padding: 0 10px; margin: 12px auto; }
@@ -253,14 +255,16 @@
 </head>
 <body>
   <header>
-    <h1>Stock Price Alert Dashboard</h1>
-    <div style="display:flex;align-items:center;gap:12px;">
+    <img src="/pin-ping-transparent-512.png" alt="Stock Price Alert Dashboard" class="header-logo">
+    <div class="header-controls">
       <button class="btn-theme" id="themeToggle" onclick="toggleTheme()" title="Toggle dark mode">
         <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
       </button>
       <div class="header-right hidden" id="headerRight">
-        <span id="headerUser"></span>
-        <button class="btn-settings" onclick="showSettings()">Settings</button>
+        <div class="header-user-col">
+          <span id="headerUser"></span>
+          <button class="btn-settings" onclick="showSettings()">Settings</button>
+        </div>
         <button class="btn-logout" onclick="logout()">Log out</button>
       </div>
     </div>
