@@ -143,7 +143,7 @@
     /* Auth styles */
     .auth-wrapper {
       display: flex; justify-content: center; align-items: center;
-      min-height: calc(100vh - 60px);
+      min-height: 100%;
     }
     .auth-card {
       background: var(--surface); border-radius: 8px; box-shadow: 0 2px 8px var(--card-shadow);
@@ -178,6 +178,15 @@
     .settings-back:hover { text-decoration: underline; }
     .success-msg { color: #27ae60; font-size: 13px; margin-top: 8px; }
 
+    /* ── App shell: header + dashboard top stay pinned, alerts list scrolls ── */
+    html, body { height: 100%; }
+    body { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+    header { flex: 0 0 auto; }
+    #authScreen, #settingsScreen { flex: 1 1 auto; min-height: 0; overflow-y: auto; width: 100%; }
+    #dashboard { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; width: 100%; }
+    .dash-top { flex: 0 0 auto; overflow-y: auto; max-height: 65vh; max-height: 65dvh; width: 100%; margin: 16px auto 12px; }
+    .dash-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
     /* ── Mobile responsive ──────────────────────────────────────────── */
     @media (max-width: 640px) {
       header { padding: 6px 16px 6px 8px; }
@@ -191,9 +200,10 @@
       .form-row { flex-direction: column; }
       .form-group input, .form-group textarea { width: 100% !important; }
       .form-group textarea { height: 44px !important; }
-      #addBtn { width: 100%; padding: 12px; font-size: 15px; }
+      #showAddFormBtn { width: 100%; padding: 12px; font-size: 15px; }
+      .form-buttons button { flex: 1; padding: 12px; font-size: 15px; }
 
-      .auth-wrapper { padding: 16px; min-height: calc(100vh - 52px); }
+      .auth-wrapper { padding: 16px; min-height: 100%; }
       .auth-card { padding: 24px 20px; }
 
       /* Hide table layout, show as compact cards */
@@ -300,8 +310,10 @@
   </div>
 
   <!-- Dashboard (shown after login) -->
-  <div id="dashboard" class="container hidden">
-    <div class="card">
+  <div id="dashboard" class="hidden">
+    <div class="container dash-top">
+    <button type="button" class="btn-primary" id="showAddFormBtn" onclick="showAddForm()">+ Add Alert</button>
+    <div class="card hidden" id="addCard" style="margin-bottom:0;">
       <h2>Add Alert</h2>
       <form id="addForm" style="display:flex;flex-direction:column;gap:10px;">
           <div class="form-group">
@@ -326,13 +338,17 @@
             <label for="notes">Notes</label>
             <textarea id="notes" rows="2" maxlength="50" placeholder="Optional notes" style="padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;width:180px;resize:none;font-family:inherit;background:var(--input-bg);color:var(--text);" class="notes-input"></textarea>
           </div>
-          <div>
+          <div class="form-buttons" style="display:flex;gap:10px;">
             <button type="submit" class="btn-primary" id="addBtn">Add Alert</button>
+            <button type="button" class="btn-secondary" id="cancelAddBtn" onclick="hideAddForm()">Cancel</button>
           </div>
         <div id="formError" class="error-msg"></div>
       </form>
     </div>
+    </div>
 
+    <div class="dash-scroll">
+    <div class="container" style="margin-top:0;">
     <div class="card">
       <h2>Alerts <span id="alertCount" style="font-weight:400;color:var(--text-faint);font-size:14px;"></span></h2>
       <table>
@@ -353,6 +369,8 @@
           <tr><td colspan="9" class="empty">Loading...</td></tr>
         </tbody>
       </table>
+    </div>
+    </div>
     </div>
   </div>
 
@@ -435,6 +453,7 @@
       } else {
         noEmailModal.classList.add("hidden");
       }
+      hideAddForm();
       loadAlerts();
     }
 
@@ -575,6 +594,22 @@
     const addForm = document.getElementById("addForm");
     const formError = document.getElementById("formError");
     const addBtn = document.getElementById("addBtn");
+    const addCard = document.getElementById("addCard");
+    const showAddFormBtn = document.getElementById("showAddFormBtn");
+
+    function showAddForm() {
+      addCard.classList.remove("hidden");
+      showAddFormBtn.classList.add("hidden");
+      document.getElementById("symbol").focus();
+    }
+
+    function hideAddForm() {
+      addForm.reset();
+      formError.textContent = "";
+      document.getElementById("lookupInfo").textContent = "";
+      addCard.classList.add("hidden");
+      showAddFormBtn.classList.remove("hidden");
+    }
 
     let sortCol = "symbol";
     let sortAsc = true;
@@ -836,8 +871,7 @@
           formError.textContent = data.error || "Failed to add alert.";
           return;
         }
-        addForm.reset();
-        document.getElementById("lookupInfo").textContent = "";
+        hideAddForm();
         await loadAlerts();
       } catch {
         formError.textContent = "Network error.";
