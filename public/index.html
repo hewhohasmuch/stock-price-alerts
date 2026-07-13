@@ -212,8 +212,10 @@
       tr {
         display: flex; flex-wrap: wrap; align-items: flex-start;
         background: var(--mobile-card-bg); border: 1px solid var(--border-light); border-radius: 8px;
+        border-left: 3px solid var(--primary);
         padding: 8px 10px; padding-top: 6px; margin-bottom: 6px; position: relative;
       }
+      tr:has(> td.empty) { border-left: 1px solid var(--border-light); }
       td { display: block; width: 100%; border-bottom: none; padding: 1px 0; font-size: 12px; order: 5; }
       td:before {
         content: attr(data-label);
