@@ -7,10 +7,12 @@ import { fileURLToPath } from "node:url";
 
 import {
   initDb, pool, checkRateLimit,
-  listAlerts, addAlert, removeAlert, setAlertEnabled, updateAlertNotes,
-  updateAlertThresholds, resetBreach, createUser, verifyUser,
+  listAlerts, addAlert, addTypedAlert, getAlert, removeAlert, setAlertEnabled,
+  updateAlertNotes, updateAlertThresholds, updateAlertParams, resetBreach,
+  resetTypedTrigger, createUser, verifyUser,
   findUserById, updateUserNotificationEmail,
 } from "./db.js";
+import type { AlertParams, AlertType, PercentChangeParams } from "./types.js";
 import { fetchSinglePrice, fetchPrices } from "./services/price-fetcher.js";
 import { checkPrices } from "./scheduler.js";
 import { isMarketOpen } from "./utils/market-hours.js";
@@ -226,6 +228,35 @@ function requireAuth(
   next();
 }
 
+// ── Typed alert param validation ─────────────────────────────────────────
+
+const PERCENT_DIRECTIONS = ["up", "down", "either"] as const;
+
+function validateAlertParams(
+  alertType: string,
+  params: unknown,
+): { params: AlertParams } | { error: string } {
+  const p = params as Record<string, unknown> | null | undefined;
+  const percent = Number(p?.percent);
+  if (!p || !Number.isFinite(percent) || percent <= 0 || percent > 100) {
+    return { error: "params.percent must be a number between 0 and 100" };
+  }
+
+  if (alertType === "percent-change") {
+    const direction = p.direction;
+    if (typeof direction !== "string" || !PERCENT_DIRECTIONS.includes(direction as any)) {
+      return { error: "params.direction must be 'up', 'down', or 'either'" };
+    }
+    return { params: { percent, direction } as PercentChangeParams };
+  }
+
+  if (alertType === "trailing-high") {
+    return { params: { percent } };
+  }
+
+  return { error: `Unknown alertType '${alertType}'` };
+}
+
 // ── Alert routes (protected) ────────────────────────────────────────────
 
 app.get("/api/alerts", requireAuth, async (req, res) => {
@@ -239,8 +270,22 @@ app.get("/api/alerts", requireAuth, async (req, res) => {
 
 app.post("/api/alerts", requireAuth, async (req, res) => {
   try {
-    const { symbol, abovePrice, belowPrice, notes } = req.body;
-    if (!symbol || (abovePrice == null && belowPrice == null)) {
+    const { symbol, abovePrice, belowPrice, notes, alertType, params } = req.body;
+    if (!symbol) {
+      res.status(400).json({ error: "symbol required" });
+      return;
+    }
+
+    const isTyped = alertType != null && alertType !== "absolute-threshold";
+    let typedParams: AlertParams | null = null;
+    if (isTyped) {
+      const validated = validateAlertParams(String(alertType), params);
+      if ("error" in validated) {
+        res.status(400).json({ error: validated.error });
+        return;
+      }
+      typedParams = validated.params;
+    } else if (abovePrice == null && belowPrice == null) {
       res
         .status(400)
         .json({ error: "symbol and at least one of abovePrice/belowPrice required" });
@@ -259,14 +304,24 @@ app.post("/api/alerts", requireAuth, async (req, res) => {
       console.warn(`  Price lookup for ${symbol} failed:`, (pfErr as Error).message);
     }
 
-    const alert = await addAlert(
-      req.session.userId!,
-      resolvedSymbol,
-      resolvedName,
-      abovePrice != null ? Number(abovePrice) : undefined,
-      belowPrice != null ? Number(belowPrice) : undefined,
-      notes ? String(notes).slice(0, 50) : undefined
-    );
+    const trimmedNotes = notes ? String(notes).slice(0, 50) : undefined;
+    const alert = typedParams
+      ? await addTypedAlert(
+          req.session.userId!,
+          resolvedSymbol,
+          resolvedName,
+          alertType as AlertType,
+          typedParams,
+          trimmedNotes
+        )
+      : await addAlert(
+          req.session.userId!,
+          resolvedSymbol,
+          resolvedName,
+          abovePrice != null ? Number(abovePrice) : undefined,
+          belowPrice != null ? Number(belowPrice) : undefined,
+          trimmedNotes
+        );
     res.status(201).json(alert);
   } catch (err) {
     console.error("POST /api/alerts error:", err);
@@ -353,6 +408,46 @@ app.patch("/api/alerts/:id/thresholds", requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to update thresholds" });
+  }
+});
+
+app.patch("/api/alerts/:id/params", requireAuth, async (req, res) => {
+  try {
+    const alert = await getAlert(String(req.params.id), req.session.userId!);
+    if (!alert) {
+      res.status(404).json({ error: "Alert not found" });
+      return;
+    }
+    if (!alert.alertType) {
+      res.status(400).json({ error: "Use /thresholds to edit this alert" });
+      return;
+    }
+    const validated = validateAlertParams(alert.alertType, req.body?.params ?? req.body);
+    if ("error" in validated) {
+      res.status(400).json({ error: validated.error });
+      return;
+    }
+    const ok = await updateAlertParams(alert.id, req.session.userId!, validated.params);
+    if (!ok) {
+      res.status(404).json({ error: "Alert not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update params" });
+  }
+});
+
+app.patch("/api/alerts/:id/reset-trigger", requireAuth, async (req, res) => {
+  try {
+    const ok = await resetTypedTrigger(String(req.params.id), req.session.userId!);
+    if (!ok) {
+      res.status(404).json({ error: "Alert not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to reset trigger" });
   }
 });
 

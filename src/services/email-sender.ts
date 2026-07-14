@@ -20,22 +20,29 @@ function getTransporter(): nodemailer.Transporter {
 }
 
 export async function sendEmailAlert(triggered: TriggeredAlert): Promise<void> {
-  const { alert, currentPrice, direction, threshold } = triggered;
+  const { alert, currentPrice, direction, threshold, message } = triggered;
 
   if (!alert.userEmail) {
     throw new Error("No notification email configured for this user");
   }
 
-  const arrow = direction === "above" ? "above" : "below";
+  let subject: string;
+  let text: string;
 
-  const subject = `Stock Alert: ${alert.symbol} is ${arrow} $${threshold}`;
-  const text = [
-    `${alert.symbol} (${alert.name})`,
-    `Current price: $${currentPrice.toFixed(2)}`,
-    `Threshold: ${direction} $${threshold}`,
-    ``,
-    `This alert was triggered because the stock price moved ${arrow} your configured threshold.`,
-  ].join("\n");
+  if (message) {
+    subject = `Stock Alert: ${alert.symbol}`;
+    text = [`${alert.symbol} (${alert.name})`, ``, message].join("\n");
+  } else {
+    const arrow = direction === "above" ? "above" : "below";
+    subject = `Stock Alert: ${alert.symbol} is ${arrow} $${threshold}`;
+    text = [
+      `${alert.symbol} (${alert.name})`,
+      `Current price: $${currentPrice.toFixed(2)}`,
+      `Threshold: ${direction} $${threshold}`,
+      ``,
+      `This alert was triggered because the stock price moved ${arrow} your configured threshold.`,
+    ].join("\n");
+  }
 
   await getTransporter().sendMail({
     from: config.smtp.user,

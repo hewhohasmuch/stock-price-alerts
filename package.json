@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit",
+    "test": "vitest run tests/alert-evaluator.test.ts",
+    "test:all": "vitest run",
     "start": "tsx src/scheduler.ts",
     "cli": "tsx src/cli.ts",
     "web": "tsx src/server.ts"
@@ -32,6 +34,7 @@
     "@types/nodemailer": "^6.4.17",
     "@types/pg": "^8.16.0",
     "@vercel/node": "^5.8.12",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.10"
   }
 }

@@ -2,7 +2,7 @@ import pg from "pg";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { config } from "./config.js";
-import type { StockAlert, Settings, User } from "./types.js";
+import type { StockAlert, Settings, User, AlertType, AlertParams, TrailingHighState } from "./types.js";
 
 const isLocal = /localhost|127\.0\.0\.1/.test(config.databaseUrl);
 const sslConfig = isLocal ? false : { rejectUnauthorized: false };
@@ -54,6 +54,13 @@ export async function initDb(): Promise<void> {
     -- Migration: add per-direction cooldown columns to existing tables
     ALTER TABLE alerts ADD COLUMN IF NOT EXISTS last_notified_above_at TIMESTAMPTZ;
     ALTER TABLE alerts ADD COLUMN IF NOT EXISTS last_notified_below_at TIMESTAMPTZ;
+
+    -- Migration: typed alerts (percent-change, trailing-high).
+    -- NULL alert_type = legacy above/below threshold alert.
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS alert_type TEXT;
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS params_json JSONB;
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS state_json JSONB;
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS last_triggered_at TIMESTAMPTZ;
 
     -- Migration: add per-user notification email
     ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_email TEXT;
@@ -178,6 +185,10 @@ function rowToAlert(row: any): StockAlert {
     lastNotifiedBelowAt: row.lastNotifiedBelowAt ? row.lastNotifiedBelowAt.toISOString() : undefined,
     createdAt: row.createdAt.toISOString(),
     userEmail: row.userEmail ?? undefined,
+    alertType: row.alertType ?? undefined,
+    params: row.params ?? undefined,
+    state: row.state ?? undefined,
+    lastTriggeredAt: row.lastTriggeredAt ? row.lastTriggeredAt.toISOString() : undefined,
   };
 }
 
@@ -187,7 +198,9 @@ const ALERT_COLUMNS = `
   notes, enabled, last_notified_at AS "lastNotifiedAt",
   last_notified_above_at AS "lastNotifiedAboveAt",
   last_notified_below_at AS "lastNotifiedBelowAt",
-  created_at AS "createdAt"
+  created_at AS "createdAt",
+  alert_type AS "alertType", params_json AS "params",
+  state_json AS "state", last_triggered_at AS "lastTriggeredAt"
 `;
 
 export async function addAlert(
@@ -206,6 +219,75 @@ export async function addAlert(
     [id, userId, symbol.toUpperCase(), name, abovePrice ?? null, belowPrice ?? null, notes ?? null],
   );
   return rowToAlert(rows[0]);
+}
+
+export async function addTypedAlert(
+  userId: string,
+  symbol: string,
+  name: string,
+  alertType: AlertType,
+  params: AlertParams,
+  notes?: string,
+): Promise<StockAlert> {
+  const id = randomUUID();
+  const { rows } = await pool.query(
+    `INSERT INTO alerts (id, user_id, symbol, name, alert_type, params_json, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING ${ALERT_COLUMNS}`,
+    [id, userId, symbol.toUpperCase(), name, alertType, JSON.stringify(params), notes ?? null],
+  );
+  return rowToAlert(rows[0]);
+}
+
+export async function getAlert(id: string, userId: string): Promise<StockAlert | null> {
+  const { rows } = await pool.query(
+    `SELECT ${ALERT_COLUMNS} FROM alerts WHERE id = $1 AND user_id = $2`,
+    [id, userId],
+  );
+  return rows.length > 0 ? rowToAlert(rows[0]) : null;
+}
+
+export async function saveAlertState(id: string, state: TrailingHighState): Promise<void> {
+  await pool.query(
+    `UPDATE alerts SET state_json = $1 WHERE id = $2`,
+    [JSON.stringify(state), id],
+  );
+}
+
+export async function markTriggered(id: string): Promise<void> {
+  await pool.query(
+    `UPDATE alerts SET last_triggered_at = now() WHERE id = $1`,
+    [id],
+  );
+}
+
+export async function updateAlertParams(
+  id: string,
+  userId: string,
+  params: AlertParams,
+): Promise<boolean> {
+  // Editing params starts the alert fresh: clear state and cooldown so the
+  // new condition is evaluated from scratch on the next scheduler run.
+  const { rowCount } = await pool.query(
+    `UPDATE alerts SET
+       params_json = $1,
+       state_json = NULL,
+       last_triggered_at = NULL
+     WHERE id = $2 AND user_id = $3 AND alert_type IS NOT NULL`,
+    [JSON.stringify(params), id, userId],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+export async function resetTypedTrigger(id: string, userId: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE alerts SET
+       last_triggered_at = NULL,
+       state_json = state_json - 'triggeredAtMark'
+     WHERE id = $1 AND user_id = $2 AND alert_type IS NOT NULL`,
+    [id, userId],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 export async function removeAlert(id: string, userId: string): Promise<boolean> {
@@ -233,6 +315,8 @@ export async function getEnabledAlerts(): Promise<StockAlert[]> {
        a.last_notified_above_at AS "lastNotifiedAboveAt",
        a.last_notified_below_at AS "lastNotifiedBelowAt",
        a.created_at AS "createdAt",
+       a.alert_type AS "alertType", a.params_json AS "params",
+       a.state_json AS "state", a.last_triggered_at AS "lastTriggeredAt",
        u.notification_email AS "userEmail"
      FROM alerts a
      JOIN users u ON u.id = a.user_id
