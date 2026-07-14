@@ -19,10 +19,13 @@ async function fetchChart(symbol: string): Promise<PriceResult | null> {
   const meta = json?.chart?.result?.[0]?.meta;
   if (!meta || meta.regularMarketPrice == null) return null;
 
+  const previousClose = meta.chartPreviousClose ?? meta.regularMarketPreviousClose;
+
   return {
     symbol: (meta.symbol || symbol).toUpperCase(),
     price: meta.regularMarketPrice,
     name: meta.shortName || meta.longName || meta.symbol || symbol,
+    previousClose: typeof previousClose === "number" ? previousClose : undefined,
   };
 }
 

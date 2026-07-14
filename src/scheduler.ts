@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { config, isEmailConfigured, isSmsConfigured } from "./config.js";
-import { getEnabledAlerts } from "./db.js";
+import { getEnabledAlerts, saveAlertState } from "./db.js";
 import { fetchPrices } from "./services/price-fetcher.js";
 import { evaluateAlerts } from "./services/alert-evaluator.js";
 import { notify } from "./services/notifier.js";
@@ -36,7 +36,18 @@ export async function checkPrices(): Promise<CheckResult> {
     console.log(`  ${p.symbol}: $${p.price.toFixed(2)}`);
   }
 
-  const triggered = evaluateAlerts(alerts, prices);
+  const { triggered, stateUpdates } = evaluateAlerts(alerts, prices);
+
+  // Persist evaluator state (e.g. trailing high-water mark) even when
+  // nothing triggered, so the ratchet survives across runs.
+  for (const alert of stateUpdates) {
+    if (!alert.state) continue;
+    try {
+      await saveAlertState(alert.id, alert.state);
+    } catch (err) {
+      console.error(`  Failed to save state for alert ${alert.id}:`, (err as Error).message);
+    }
+  }
 
   if (triggered.length === 0) {
     console.log(`  No thresholds crossed.`);

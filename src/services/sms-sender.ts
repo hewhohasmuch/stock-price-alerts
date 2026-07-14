@@ -12,10 +12,15 @@ function getClient() {
 }
 
 export async function sendSmsAlert(triggered: TriggeredAlert): Promise<void> {
-  const { alert, currentPrice, direction, threshold } = triggered;
-  const arrow = direction === "above" ? "above" : "below";
+  const { alert, currentPrice, direction, threshold, message } = triggered;
 
-  const body = `Stock Alert: ${alert.symbol} ($${currentPrice.toFixed(2)}) is ${arrow} $${threshold}`;
+  let body: string;
+  if (message) {
+    body = `Stock Alert: ${message}`;
+  } else {
+    const arrow = direction === "above" ? "above" : "below";
+    body = `Stock Alert: ${alert.symbol} ($${currentPrice.toFixed(2)}) is ${arrow} $${threshold}`;
+  }
 
   await getClient().messages.create({
     body,
