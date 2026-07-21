@@ -64,6 +64,11 @@ export async function initDb(): Promise<void> {
 
     -- Migration: add per-user notification email
     ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_email TEXT;
+
+    -- Migration: enforce case-insensitive username uniqueness (the plain
+    -- UNIQUE constraint on username is case-sensitive, but lookups treat
+    -- usernames as case-insensitive).
+    CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_idx ON users (LOWER(username));
   `);
 }
 
