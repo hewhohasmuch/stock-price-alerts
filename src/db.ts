@@ -62,6 +62,12 @@ export async function initDb(): Promise<void> {
     ALTER TABLE alerts ADD COLUMN IF NOT EXISTS state_json JSONB;
     ALTER TABLE alerts ADD COLUMN IF NOT EXISTS last_triggered_at TIMESTAMPTZ;
 
+    -- Migration: shortlist feature (starred tickers with manual shares/stage tracking).
+    -- shortlisted/staged are pure bookkeeping flags with no alert-trigger semantics.
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS shortlisted BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS shares DOUBLE PRECISION NOT NULL DEFAULT 1;
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS staged BOOLEAN NOT NULL DEFAULT false;
+
     -- Migration: add per-user notification email
     ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_email TEXT;
 
@@ -194,6 +200,9 @@ function rowToAlert(row: any): StockAlert {
     params: row.params ?? undefined,
     state: row.state ?? undefined,
     lastTriggeredAt: row.lastTriggeredAt ? row.lastTriggeredAt.toISOString() : undefined,
+    shortlisted: row.shortlisted,
+    shares: row.shares,
+    staged: row.staged,
   };
 }
 
@@ -205,7 +214,8 @@ const ALERT_COLUMNS = `
   last_notified_below_at AS "lastNotifiedBelowAt",
   created_at AS "createdAt",
   alert_type AS "alertType", params_json AS "params",
-  state_json AS "state", last_triggered_at AS "lastTriggeredAt"
+  state_json AS "state", last_triggered_at AS "lastTriggeredAt",
+  shortlisted, shares, staged
 `;
 
 export async function addAlert(
@@ -342,6 +352,37 @@ export async function updateAlertNotes(id: string, userId: string, notes: string
   const { rowCount } = await pool.query(
     `UPDATE alerts SET notes = $1 WHERE id = $2 AND user_id = $3`,
     [notes, id, userId],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+export async function setAlertShortlisted(id: string, userId: string, shortlisted: boolean): Promise<boolean> {
+  // Un-shortlisting clears the shortlist bookkeeping (shares/staged) so a later
+  // re-add starts fresh at the defaults, rather than resurrecting stale values.
+  const { rowCount } = shortlisted
+    ? await pool.query(
+        `UPDATE alerts SET shortlisted = true WHERE id = $1 AND user_id = $2`,
+        [id, userId],
+      )
+    : await pool.query(
+        `UPDATE alerts SET shortlisted = false, shares = 1, staged = false WHERE id = $1 AND user_id = $2`,
+        [id, userId],
+      );
+  return (rowCount ?? 0) > 0;
+}
+
+export async function setAlertStaged(id: string, userId: string, staged: boolean): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE alerts SET staged = $1 WHERE id = $2 AND user_id = $3`,
+    [staged, id, userId],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+export async function updateAlertShares(id: string, userId: string, shares: number): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE alerts SET shares = $1 WHERE id = $2 AND user_id = $3`,
+    [shares, id, userId],
   );
   return (rowCount ?? 0) > 0;
 }

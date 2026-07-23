@@ -9,6 +9,7 @@ import {
   initDb, pool, checkRateLimit,
   listAlerts, addAlert, addTypedAlert, getAlert, removeAlert, setAlertEnabled,
   updateAlertNotes, updateAlertThresholds, updateAlertParams, resetBreach,
+  setAlertShortlisted, setAlertStaged, updateAlertShares,
   resetTypedTrigger, createUser, verifyUser,
   findUserById, updateUserNotificationEmail,
 } from "./db.js";
@@ -368,6 +369,32 @@ app.patch("/api/alerts/:id/disable", requireAuth, async (req, res) => {
   }
 });
 
+app.patch("/api/alerts/:id/shortlist", requireAuth, async (req, res) => {
+  try {
+    const ok = await setAlertShortlisted(String(req.params.id), req.session.userId!, true);
+    if (!ok) {
+      res.status(404).json({ error: "Alert not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to add to shortlist" });
+  }
+});
+
+app.patch("/api/alerts/:id/unshortlist", requireAuth, async (req, res) => {
+  try {
+    const ok = await setAlertShortlisted(String(req.params.id), req.session.userId!, false);
+    if (!ok) {
+      res.status(404).json({ error: "Alert not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to remove from shortlist" });
+  }
+});
+
 app.patch("/api/alerts/:id/notes", requireAuth, async (req, res) => {
   try {
     const { notes } = req.body;
@@ -384,6 +411,42 @@ app.patch("/api/alerts/:id/notes", requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to update notes" });
+  }
+});
+
+app.patch("/api/alerts/:id/shares", requireAuth, async (req, res) => {
+  try {
+    const shares = Number(req.body.shares);
+    if (!Number.isFinite(shares) || shares < 0) {
+      res.status(400).json({ error: "shares must be a non-negative number" });
+      return;
+    }
+    const ok = await updateAlertShares(String(req.params.id), req.session.userId!, shares);
+    if (!ok) {
+      res.status(404).json({ error: "Alert not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update shares" });
+  }
+});
+
+app.patch("/api/alerts/:id/stage", requireAuth, async (req, res) => {
+  try {
+    const { staged } = req.body;
+    if (typeof staged !== "boolean") {
+      res.status(400).json({ error: "staged must be a boolean" });
+      return;
+    }
+    const ok = await setAlertStaged(String(req.params.id), req.session.userId!, staged);
+    if (!ok) {
+      res.status(404).json({ error: "Alert not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update stage" });
   }
 });
 

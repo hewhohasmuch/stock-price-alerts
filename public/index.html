@@ -135,6 +135,20 @@
 
     .actions { display: flex; gap: 6px; }
     .notes-full { display: none; }
+
+    .tab-bar { display: flex; gap: 8px; }
+    .tab-btn {
+      background: var(--surface, var(--card-bg)); color: var(--text-muted);
+      border: 1px solid var(--border); border-bottom: none;
+      padding: 8px 18px; border-radius: 6px 6px 0 0; font-weight: 600; font-size: 14px;
+    }
+    .tab-btn:hover { opacity: 1; color: var(--text); }
+    .tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .shortlist-total-row td {
+      font-weight: 700; font-size: 14px; border-bottom: none;
+      border-top: 2px solid var(--border-light); padding-top: 12px;
+    }
+    .btn-shortlist-toggle { display: inline-flex; align-items: center; }
     .empty { text-align: center; color: var(--text-faint); padding: 32px 0; }
     .mono { font-family: monospace; font-size: 12px; color: var(--text-muted); }
 
@@ -243,6 +257,27 @@
       td.actions:before { display: none; }
       td.actions button { padding: 2px 4px !important; }
 
+      /* Shortlist "add to list" toggle: pin to the card's bottom-right corner */
+      .actions .btn-shortlist-toggle { position: absolute; bottom: 6px; right: 8px; }
+
+      /* Shortlist keeps a real table on mobile (no card reflow) */
+      #shortlistView .card { overflow-x: auto; }
+      #shortlistView table { display: table; }
+      #shortlistView thead { display: table-header-group; }
+      #shortlistView tbody { display: table-row-group; }
+      #shortlistView tfoot { display: table-footer-group; }
+      #shortlistView tr {
+        display: table-row; background: none; border: none; border-left: none;
+        border-radius: 0; padding: 0; margin: 0;
+      }
+      #shortlistView th { display: table-cell; }
+      #shortlistView td {
+        display: table-cell; width: auto; order: 0;
+        border-bottom: 1px solid var(--border-lighter); padding: 8px 4px; font-size: 12px;
+      }
+      #shortlistView td:before { display: none; }
+      #shortlistView .shortlist-total-row td { border-bottom: none; }
+
       /* Force line break after first row */
       tr::before { content: ''; order: 4; flex-basis: 100%; height: 0; }
 
@@ -320,13 +355,19 @@
 
   <!-- Dashboard (shown after login) -->
   <div id="dashboard" class="hidden">
+    <div class="tab-bar container" style="margin:12px auto 0;">
+      <button type="button" class="tab-btn active" id="tabWatchlistBtn" onclick="showWatchlistTab()">Watchlist <span id="watchlistCount">(0)</span></button>
+      <button type="button" class="tab-btn" id="tabShortlistBtn" onclick="showShortlistTab()">Shortlist <span id="shortlistCount">(0)</span></button>
+    </div>
+
+    <div id="watchlistView" style="display:contents;">
     <div class="container dash-top">
     <button type="button" class="btn-primary" id="showAddFormBtn" onclick="showAddForm()">+ Add Alert</button>
     <div class="card hidden" id="addCard" style="margin-bottom:0;">
       <h2>Add Alert</h2>
       <form id="addForm" style="display:flex;flex-direction:column;gap:10px;">
           <div class="form-group">
-            <label for="symbol">Symbol</label>
+            <label for="symbol">Ticker</label>
             <div style="display:flex;gap:6px;align-items:center;">
               <input id="symbol" type="text" placeholder="AAPL" required style="text-transform:uppercase;width:48px;">
               <button type="button" id="lookupBtn" class="btn-secondary" onclick="lookupSymbol()">Lookup</button>
@@ -387,11 +428,11 @@
     <div class="dash-scroll">
     <div class="container" style="margin-top:0;">
     <div class="card">
-      <h2>Alerts <span id="alertCount" style="font-weight:400;color:var(--text-faint);font-size:14px;"></span></h2>
+      <h2>Alerts</h2>
       <table>
         <thead>
           <tr>
-            <th class="sortable" onclick="setSort('symbol')">Symbol<span class="sort-arrow" id="sort-symbol"></span></th>
+            <th class="sortable" onclick="setSort('symbol')">Ticker<span class="sort-arrow" id="sort-symbol"></span></th>
             <th class="sortable" onclick="setSort('name')">Name<span class="sort-arrow" id="sort-name"></span></th>
             <th class="sortable" onclick="setSort('price')">Price<span class="sort-arrow" id="sort-price"></span></th>
             <th>Above</th>
@@ -405,6 +446,37 @@
         <tbody id="alertsBody">
           <tr><td colspan="9" class="empty">Loading...</td></tr>
         </tbody>
+      </table>
+    </div>
+    </div>
+    </div>
+    </div>
+
+    <div id="shortlistView" class="hidden dash-scroll">
+    <div class="container" style="margin-top:12px;">
+    <div class="card">
+      <h2>Shortlist</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Price</th>
+            <th>Shares</th>
+            <th>Total</th>
+            <th>Stage</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="shortlistBody">
+          <tr><td colspan="6" class="empty">Loading...</td></tr>
+        </tbody>
+        <tfoot>
+          <tr class="shortlist-total-row">
+            <td colspan="3" style="text-align:right;">TOTAL</td>
+            <td id="shortlistSubtotal">$0.00</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
     </div>
@@ -491,6 +563,7 @@
         noEmailModal.classList.add("hidden");
       }
       hideAddForm();
+      showWatchlistTab();
       loadAlerts();
     }
 
@@ -660,6 +733,8 @@
     let sortAsc = true;
     let priceCache = {};
     let nameCache = {};
+    let allAlerts = [];  // last-fetched alerts; source of truth for the Shortlist view
+    const shortlistBody = document.getElementById("shortlistBody");
 
     function setSort(col) {
       if (sortCol === col) {
@@ -911,6 +986,7 @@
           cell.textContent = nameCache[sym];
         }
       });
+      recomputeShortlistTotals();
       if (sortCol === "price") loadAlerts(true);
     }
 
@@ -919,11 +995,11 @@
         const res = await fetch("/api/alerts");
         if (res.status === 401) { showAuth(); return; }
         const alerts = await res.json();
-        document.getElementById("alertCount").textContent = `(${alerts.length})`;
+        allAlerts = alerts;
+        document.getElementById("watchlistCount").textContent = `(${alerts.length})`;
         if (alerts.length === 0) {
           alertsBody.innerHTML = '<tr><td colspan="9" class="empty">No alerts yet. Add one above.</td></tr>';
-          return;
-        }
+        } else {
         const sorted = sortAlerts(alerts);
         alertsBody.innerHTML = sorted.map(a => `
           <tr>
@@ -940,10 +1016,13 @@
             <td data-label="Created" class="mono">${fmtDate(a.createdAt)}</td>
             <td data-label="Status" class="cell-status"><span class="badge ${a.enabled ? "badge-on" : "badge-off"}" onclick="toggleAlert('${a.id}', ${a.enabled})" style="cursor:pointer;" title="Click to toggle">${a.enabled ? "Enabled" : "Disabled"}</span></td>
             <td class="actions">
+              <button class="btn-shortlist-toggle" onclick="toggleShortlist('${a.id}', ${a.shortlisted})" title="${a.shortlisted ? 'Remove from shortlist' : 'Add to shortlist'}" style="background:none;padding:4px 6px;line-height:1;"><svg width="18" height="18" viewBox="0 0 24 24" fill="${a.shortlisted ? 'var(--primary)' : 'none'}" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
               <button onclick="removeAlert('${a.id}')" title="Remove alert" style="background:none;padding:4px 6px;line-height:1;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
             </td>
           </tr>
         `).join("");
+        }
+        renderShortlistTable();
         if (!skipPrices) loadPrices();
       } catch {
         alertsBody.innerHTML = '<tr><td colspan="10" class="empty">Failed to load alerts.</td></tr>';
@@ -1019,6 +1098,110 @@
     async function removeAlert(id) {
       if (!confirm("Remove this alert?")) return;
       await fetch(`/api/alerts/${id}`, { method: "DELETE" });
+      await loadAlerts();
+    }
+
+    // ── Watchlist / Shortlist tabs ────────────────────────────────────────
+
+    function showWatchlistTab() {
+      document.getElementById("watchlistView").classList.remove("hidden");
+      document.getElementById("shortlistView").classList.add("hidden");
+      document.getElementById("tabWatchlistBtn").classList.add("active");
+      document.getElementById("tabShortlistBtn").classList.remove("active");
+    }
+
+    function showShortlistTab() {
+      document.getElementById("watchlistView").classList.add("hidden");
+      document.getElementById("shortlistView").classList.remove("hidden");
+      document.getElementById("tabWatchlistBtn").classList.remove("active");
+      document.getElementById("tabShortlistBtn").classList.add("active");
+    }
+
+    async function toggleShortlist(id, currentlyShortlisted) {
+      const action = currentlyShortlisted ? "unshortlist" : "shortlist";
+      await fetch(`/api/alerts/${id}/${action}`, { method: "PATCH" });
+      await loadAlerts();
+    }
+
+    async function removeFromShortlist(id) {
+      await fetch(`/api/alerts/${id}/unshortlist`, { method: "PATCH" });
+      await loadAlerts();
+    }
+
+    function renderShortlistTable() {
+      const rows = allAlerts.filter(a => a.shortlisted).sort((a, b) => a.symbol.localeCompare(b.symbol));
+      document.getElementById("shortlistCount").textContent = `(${rows.length})`;
+      if (rows.length === 0) {
+        shortlistBody.innerHTML = '<tr><td colspan="6" class="empty">No shortlisted tickers yet. Tap the list icon on a Watchlist row to add one.</td></tr>';
+        recomputeShortlistTotals();
+        return;
+      }
+      shortlistBody.innerHTML = rows.map(a => `
+        <tr data-id="${a.id}">
+          <td data-label="Ticker"><strong>${esc(a.symbol)}</strong></td>
+          <td data-label="Price" class="price-cell" data-symbol="${a.symbol}" style="color:var(--text-muted);">…</td>
+          <td data-label="Shares"><input type="number" step="any" min="0" value="${a.shares}" class="shares-input" data-id="${a.id}" onchange="onSharesChange(this)" style="width:70px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text);"></td>
+          <td data-label="Total" class="total-cell">—</td>
+          <td data-label="Stage"><input type="checkbox" ${a.staged ? "checked" : ""} onchange="onStageChange('${a.id}', this.checked)"></td>
+          <td class="actions">
+            <button onclick="removeFromShortlist('${a.id}')" title="Remove from shortlist" style="background:none;padding:4px 6px;line-height:1;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
+          </td>
+        </tr>
+      `).join("");
+      recomputeShortlistTotals();
+    }
+
+    function recomputeShortlistTotals() {
+      let subtotal = 0;
+      document.querySelectorAll("#shortlistBody tr[data-id]").forEach(row => {
+        const alert = allAlerts.find(a => a.id === row.dataset.id);
+        if (!alert) return;
+        const price = priceCache[alert.symbol];
+        const totalCell = row.querySelector(".total-cell");
+        if (price != null) {
+          const total = Number(price) * (alert.shares ?? 0);
+          if (totalCell) totalCell.textContent = "$" + total.toFixed(2);
+          if (alert.staged) subtotal += total;
+        } else if (totalCell) {
+          totalCell.textContent = "—";
+        }
+      });
+      const subEl = document.getElementById("shortlistSubtotal");
+      if (subEl) subEl.textContent = "$" + subtotal.toFixed(2);
+    }
+
+    async function onSharesChange(input) {
+      const id = input.dataset.id;
+      const raw = input.value.trim();
+      const shares = raw === "" ? 0 : Number(raw);
+      if (!Number.isFinite(shares) || shares < 0) {
+        input.style.borderColor = "var(--danger)";
+        return;
+      }
+      input.style.borderColor = "";
+      const alert = allAlerts.find(a => a.id === id);
+      if (alert) alert.shares = shares;
+      recomputeShortlistTotals();
+      try {
+        await fetch(`/api/alerts/${id}/shares`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ shares }),
+        });
+      } finally {
+        await loadAlerts();
+      }
+    }
+
+    async function onStageChange(id, checked) {
+      const alert = allAlerts.find(a => a.id === id);
+      if (alert) alert.staged = checked;
+      recomputeShortlistTotals();
+      await fetch(`/api/alerts/${id}/stage`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staged: checked }),
+      });
       await loadAlerts();
     }
 
