@@ -45,6 +45,10 @@ export interface StockAlert {
   params?: AlertParams;
   state?: TrailingHighState;
   lastTriggeredAt?: string;
+  /** Shortlist bookkeeping — pure user planning flags, no alert-trigger meaning. */
+  shortlisted: boolean;
+  shares: number;
+  staged: boolean;
 }
 
 export interface Settings {
