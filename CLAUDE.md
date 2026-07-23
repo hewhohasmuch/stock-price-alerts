@@ -49,13 +49,19 @@ Adding a new alert type means: extend `AlertType`/`AlertParams` in `src/types.ts
 
 Single Postgres pool (`pg`), schema created/migrated idempotently on startup via `initDb()` (`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF NOT EXISTS` — there is no separate migrations directory/tool). `src/server.ts` calls `initDb()` lazily on first request (serverless-safe) rather than at module load. Typed-alert params/state are stored as `JSONB` columns (`params_json`, `state_json`); legacy alerts use dedicated `above_price`/`below_price` columns. Prefers `DATABASE_URL_UNPOOLED` over `DATABASE_URL` (Neon's pooled connection blocks startup params).
 
+The alerts table also carries the Shortlist bookkeeping as dedicated scalar columns (`shortlisted BOOLEAN`, `shares DOUBLE PRECISION DEFAULT 1`, `staged BOOLEAN`) — not JSONB, since they're fixed-shape scalars like `enabled`. These are pure user-planning flags with **no connection to alert-trigger logic** (`getEnabledAlerts()`/the scheduler ignore them). `setAlertShortlisted(id, userId, false)` also resets `shares`→1 and `staged`→false, so re-shortlisting a ticker starts fresh. Any new column must be added in three places: the `initDb()` migration, `rowToAlert()`, and `ALERT_COLUMNS`. Single-field mutations follow the `setAlertEnabled`/`updateAlertNotes` template (`UPDATE … WHERE id = $ AND user_id = $`), exposed as `PATCH /api/alerts/:id/{shortlist,unshortlist,shares,stage}`.
+
 ### Auth & sessions
 
 `express-session` backed by Postgres (`connect-pg-simple`, same pool). `SESSION_SECRET` is required in production (throws at startup if missing) and falls back to a random per-process UUID otherwise. Simple username/password auth (`bcryptjs`), no external auth provider. IP-based rate limiting for `/api/auth/*` (10 attempts / 15 min) is implemented in Postgres (`login_attempts` table), not in-memory — works correctly across serverless invocations.
 
 ### Frontend
 
-`public/` is a static, framework-free HTML/JS/CSS dashboard served directly by Express — no build step, no bundler.
+`public/` is a static, framework-free HTML/JS/CSS dashboard served directly by Express — no build step, no bundler. It's a single file (`public/index.html`) with inline `<style>`/`<script>`; alerts render as `<table>` rows that CSS-reflow into cards under `@media (max-width: 640px)`.
+
+The dashboard has two tabs (`showWatchlistTab()`/`showShortlistTab()`):
+- **Watchlist** — the "Add Alert" form + the alerts table (the original view).
+- **Shortlist** — a table (Ticker/Price/Shares/Total/Stage) of alerts the user has starred via the bookmark toggle on each Watchlist row. It's a **derived client-side view**: `renderShortlistTable()` filters the same `allAlerts` array loaded by `loadAlerts()` for `shortlisted === true` (sorted by symbol) — no separate fetch. Price reuses the existing `.price-cell`/`loadPrices()` mechanism; Total (`Price × Shares`) and the staged-only subtotal (`recomputeShortlistTotals()`) are computed client-side and never persisted. Mutations follow the app's fire-`PATCH`-then-`loadAlerts()` convention, which re-renders both tabs and keeps them in sync.
 
 ## Configuration
 
