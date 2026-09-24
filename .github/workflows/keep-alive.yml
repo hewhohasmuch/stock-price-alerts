@@ -1,9 +1,10 @@
 name: Price Check
 
+# Scheduled price checks run from cron-job.org (every 5 min, GET /api/cron with
+# x-cron-secret). GitHub's schedule was unreliable (runs hours apart) and was
+# auto-disabled after 60 days of repo inactivity. Kept for manual runs only.
 on:
-  schedule:
-    - cron: "*/5 * * * *"  # every 5 minutes
-  workflow_dispatch:        # allow manual trigger
+  workflow_dispatch:
 
 jobs:
   check:
