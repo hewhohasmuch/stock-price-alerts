@@ -25,7 +25,7 @@ This is a single Node/TypeScript backend with three entry points sharing one ser
 
 - **`src/cli.ts`** — Commander-based CLI (`npm run cli`). Operates per-user via `-u <username>`.
 - **`src/server.ts`** — Express app: session-authenticated REST API + static dashboard (`public/`) + `GET /api/cron`. This is the module deployed to Vercel (via `api/index.ts`, which just re-exports the Express `app`; `vercel.json` rewrites all requests to it). It only calls `app.listen()` when run directly (`npm run web`), not when imported serverlessly.
-- **`src/scheduler.ts`** — exports `checkPrices()` (one price-check pass) and `startScheduler()` (in-process `node-cron` loop for local dev via `npm start`). **In production, there is no long-running scheduler process** — Vercel functions are ephemeral, so a GitHub Actions workflow (`.github/workflows/keep-alive.yml`, despite the filename it's the "Price Check" cron) hits `GET /api/cron` every 5 minutes with header `x-cron-secret: $CRON_SECRET`, which calls the same `checkPrices()`.
+- **`src/scheduler.ts`** — exports `checkPrices()` (one price-check pass) and `startScheduler()` (in-process `node-cron` loop for local dev via `npm start`). **In production, there is no long-running scheduler process** — Vercel functions are ephemeral, so an external cron-job.org job hits `GET /api/cron` every 5 minutes with header `x-cron-secret: $CRON_SECRET`, which calls the same `checkPrices()`. The GitHub Actions workflow `.github/workflows/keep-alive.yml` ("Price Check") sends the same request but is manual-only (`workflow_dispatch`) — its schedule was removed because GitHub ran it hours apart and auto-disables scheduled workflows after 60 days without repo activity.
 
 ### Data flow of a price check (`checkPrices()` in `src/scheduler.ts`)
 
@@ -66,5 +66,5 @@ The dashboard has two tabs (`showWatchlistTab()`/`showShortlistTab()`):
 ## Configuration
 
 Env vars are read once into `src/config.ts` (loaded via `dotenv/config`). Notification channels are independently optional — checked via `isEmailConfigured()`/`isSmsConfigured()`; a missing channel is skipped, not an error. See `.env.example` for the full list. Notable ones not obvious from naming:
-- `CRON_SECRET` — shared secret the GitHub Actions workflow sends to authenticate `GET /api/cron`; not in `.env.example`, must be set in both Vercel env vars and the GitHub Actions secret.
+- `CRON_SECRET` — shared secret sent as `x-cron-secret` to authenticate `GET /api/cron`; not in `.env.example`. Must match in three places: Vercel env vars (marked Sensitive, so it can't be read back — rotate rather than copy, and redeploy after changing it), the GitHub Actions secret, and the cron-job.org job's header.
 - `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` — only used for the market-open check, not price data (Yahoo Finance is unauthenticated and used for all actual quotes).
