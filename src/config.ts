@@ -23,6 +23,12 @@ export const config = {
   cooldownMinutes: Number(process.env.COOLDOWN_MINUTES || 60),
   alpacaApiKey: process.env.ALPACA_API_KEY,
   alpacaSecretKey: process.env.ALPACA_SECRET_KEY,
+  // Trusted public base URL for links in emails (e.g. https://wekintech.com). Never derived
+  // from request headers. Without it, reset/verification emails are not sent.
+  appUrl: process.env.APP_URL?.trim() || null,
+  // Local development only: print account emails (including their links) to the console
+  // instead of sending them. Ignored in production.
+  devLogEmailLinks: process.env.NODE_ENV !== "production" && process.env.DEV_LOG_EMAIL_LINKS === "1",
 };
 
 export function isEmailConfigured(): boolean {

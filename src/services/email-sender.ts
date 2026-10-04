@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
-import { config } from "../config.js";
+import { config, isEmailConfigured } from "../config.js";
 import type { TriggeredAlert } from "../types.js";
+import type { Mailer } from "./account-recovery.js";
 
 let transporter: nodemailer.Transporter | null = null;
 
@@ -50,4 +51,49 @@ export async function sendEmailAlert(triggered: TriggeredAlert): Promise<void> {
     subject,
     text,
   });
+}
+
+// ── Account emails (password reset, verification, notices) ──────────────
+
+async function sendAccountEmail(to: string, subject: string, lines: string[]): Promise<void> {
+  const text = lines.join("\n");
+  if (config.devLogEmailLinks) {
+    console.log(`[dev email] to=${to} subject="${subject}"\n${text}`);
+    return;
+  }
+  if (!isEmailConfigured()) throw new Error("SMTP is not configured");
+  await getTransporter().sendMail({ from: config.smtp.user, to, subject, text });
+}
+
+export function createSmtpMailer(): Mailer {
+  return {
+    sendResetLink: (to, username, link) => sendAccountEmail(to, "Reset your Price Alert password", [
+      `Someone asked to reset the password for "${username}" on Price Alert.`,
+      ``,
+      `To choose a new password, open this link within 30 minutes:`,
+      link,
+      ``,
+      `The link works once. If you didn't ask for this, ignore this email; your password stays the same.`,
+    ]),
+    sendVerifyLink: (to, username, link) => sendAccountEmail(to, "Confirm your email for Price Alert", [
+      `Please confirm that this address belongs to the Price Alert account "${username}".`,
+      ``,
+      `Open this link within 24 hours:`,
+      link,
+      ``,
+      `Until you confirm, alert emails and password resets won't be sent here.`,
+      `If you didn't sign up, ignore this email.`,
+    ]),
+    sendPasswordChanged: (to, username) => sendAccountEmail(to, "Your Price Alert password was changed", [
+      `The password for "${username}" on Price Alert was just changed, and other devices were logged out.`,
+      ``,
+      `If this wasn't you, use "Forgot password?" on the login page right away.`,
+    ]),
+    sendEmailChanged: (to, username, newEmail) => sendAccountEmail(to, "Your Price Alert email was changed", [
+      `The email address for "${username}" on Price Alert was changed to ${newEmail}.`,
+      `Alerts and password resets now go to that address.`,
+      ``,
+      `If this wasn't you, contact the site owner.`,
+    ]),
+  };
 }
