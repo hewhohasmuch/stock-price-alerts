@@ -15,6 +15,7 @@ import {
 } from "./db.js";
 import type { AlertParams, AlertType, PercentChangeParams } from "./types.js";
 import { fetchSinglePrice, fetchPrices } from "./services/price-fetcher.js";
+import { getMarketDirection } from "./services/market-direction-service.js";
 import { checkPrices } from "./scheduler.js";
 import { isMarketOpen } from "./utils/market-hours.js";
 
@@ -569,6 +570,15 @@ app.get("/api/price/:symbol", requireAuth, async (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch price" });
+  }
+});
+
+app.get("/api/market-direction", requireAuth, async (_req, res) => {
+  try {
+    res.json(await getMarketDirection());
+  } catch (err) {
+    console.error("GET /api/market-direction error:", (err as Error).message);
+    res.status(500).json({ error: "Failed to load market direction" });
   }
 });
 
