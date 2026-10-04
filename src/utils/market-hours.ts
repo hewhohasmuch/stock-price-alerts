@@ -1,10 +1,15 @@
 import { config } from "../config.js";
 
 const CLOCK_URL = "https://paper-api.alpaca.markets/v2/clock";
+const CLOCK_TIMEOUT_MS = 5_000;
+let warnedMissingKeys = false;
 
-export async function isMarketOpen(): Promise<boolean> {
+export async function isMarketOpen(opts: { timeoutMs?: number } = {}): Promise<boolean> {
   if (!config.alpacaApiKey || !config.alpacaSecretKey) {
-    console.warn("[market-hours] ALPACA_API_KEY/ALPACA_SECRET_KEY not set — assuming market CLOSED.");
+    if (!warnedMissingKeys) {
+      console.warn("[market-hours] ALPACA_API_KEY/ALPACA_SECRET_KEY not set — assuming market CLOSED.");
+      warnedMissingKeys = true;
+    }
     return false;
   }
   try {
@@ -13,6 +18,7 @@ export async function isMarketOpen(): Promise<boolean> {
         "APCA-API-KEY-ID": config.alpacaApiKey,
         "APCA-API-SECRET-KEY": config.alpacaSecretKey,
       },
+      signal: AbortSignal.timeout(opts.timeoutMs ?? CLOCK_TIMEOUT_MS),
     });
     if (!res.ok) {
       console.warn(`[market-hours] Alpaca clock returned ${res.status} — falling back to schedule.`);

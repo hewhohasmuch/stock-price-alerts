@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm run build      # tsc --noEmit — type-check src/ and api/, no output
-npm test           # vitest run — alert-evaluator + market-direction suites (no CI or pre-commit hook)
+npm test           # vitest run — alert-evaluator, market-direction and market-hours suites (no CI or pre-commit hook)
 npm run test:all   # vitest run — all test files, see caveat below
 npm run cli -- <cmd>   # run the CLI (tsx src/cli.ts)
 npm run web         # run the Express dashboard locally (tsx src/server.ts), http://localhost:3000

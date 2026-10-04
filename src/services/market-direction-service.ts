@@ -64,6 +64,10 @@ export async function fetchIndexBars(
     throw new Error(`Yahoo chart response for ${symbol} is missing session data`);
   }
   const timestamps: number[] = result.timestamp ?? [];
+  const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? [];
+  if (timestamps.length !== closes.length) {
+    throw new Error(`Yahoo chart response for ${symbol} has mismatched timestamps/closes`);
+  }
   let sessionStart: number = regular.start;
   let sessionEnd: number = regular.end;
   // Pre-open, Yahoo may already report today's session while the bars are still the
@@ -76,7 +80,7 @@ export async function fetchIndexBars(
   }
   return {
     timestamps,
-    closes: result.indicators?.quote?.[0]?.close ?? [],
+    closes,
     priorClose,
     sessionStart,
     sessionEnd,
@@ -132,6 +136,20 @@ export function createMarketDirectionService(deps: ServiceDeps = {}) {
       }
     }
 
+    // A last good reading from an older session than freshly fetched data is misleading
+    // (e.g. yesterday's arrow during today's open); show Unavailable instead.
+    const newestFresh = results
+      .filter(r => !r.staleFromError && r.reading.sessionDate)
+      .map(r => r.reading.sessionDate!)
+      .sort()
+      .pop();
+    for (const r of results) {
+      if (r.staleFromError && newestFresh && (r.reading.sessionDate ?? "") < newestFresh) {
+        r.reading = unavailableFetch();
+        r.staleFromError = false;
+      }
+    }
+
     let clockOpen = false;
     try { clockOpen = await isMarketOpen(); } catch { clockOpen = false; }
     const today = nyDate(t);
@@ -146,7 +164,7 @@ export function createMarketDirectionService(deps: ServiceDeps = {}) {
         ...reading,
         symbol: idx.symbol,
         label: idx.label,
-        dataQuality: quality(reading, idx, t, open),
+        dataQuality: quality(reading, idx, t, open, clockOpen && reading.sessionDate !== today),
         staleFromError,
       })),
     };
@@ -173,8 +191,10 @@ function unavailableFetch(): Reading {
   };
 }
 
-function quality(r: Reading, idx: IndexConfig, t: number, open: boolean): DataQuality {
+// behindClock: the market clock says open but this reading is from an earlier session.
+function quality(r: Reading, idx: IndexConfig, t: number, open: boolean, behindClock: boolean): DataQuality {
   if (r.status !== "ok") return "unavailable";
+  if (behindClock) return "delayed";
   if (open && r.asOf != null && t - r.asOf > idx.lagThresholdSec) return "delayed";
   if (r.coverage != null && r.coverage < 1) return "incomplete";
   return "ok";

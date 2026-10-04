@@ -104,12 +104,54 @@ describe("market direction service", () => {
     expect(md.indexes[0].dataQuality).toBe("delayed");
   });
 
-  it("is closed when the clock says open but the bars are from an earlier session", async () => {
+  it("flags an earlier session as delayed when the clock says the market is open", async () => {
+    // Mon 10:00 ET, Alpaca says open, but Yahoo still serves Friday: a provider outage.
     const { service } = setup({ open: true, nowSec: Date.UTC(2026, 9, 5, 14) / 1000 });
     const md = await service.get();
     expect(md.marketState).toBe("closed");
     expect(md.indexes[0].sessionDate).toBe("2026-10-02");
-    expect(md.indexes[0].dataQuality).toBe("ok");   // lag is expected when closed
+    expect(md.indexes[0].dataQuality).toBe("delayed");
+  });
+
+  it("does not flag an earlier session when the clock says closed", async () => {
+    const { service } = setup({ open: false, nowSec: Date.UTC(2026, 9, 5, 14) / 1000 });
+    expect((await service.get()).indexes[0].dataQuality).toBe("ok");
+  });
+
+  it("drops a last good reading from an earlier session once others report a newer one", async () => {
+    const MON = Date.UTC(2026, 9, 5, 13, 30) / 1000;
+    const monday: ChartBars = { ...bars(0), timestamps: [MON], closes: [101], sessionStart: MON, sessionEnd: MON + 390 * 60 };
+    let day: "fri" | "mon" = "fri";
+    const { service, advance } = setup({
+      nowSec: END + 600,
+      open: false,
+      fetchBars: async (s) => {
+        if (day === "fri") return bars(390);
+        if (s === "A") throw new Error("down");
+        return monday;
+      },
+    });
+    await service.get();                       // Friday readings cached as last good
+    day = "mon";
+    advance(MON + 120 - (END + 600));          // Mon 9:32 ET
+    const a = (await service.get()).indexes[0];
+    expect(a.status).toBe("unavailable");
+    expect(a.reason).toBe("fetch-failed");
+  });
+
+  it("still uses the last good reading when no fresher session is known", async () => {
+    let fail = false;
+    const { service, advance } = setup({
+      nowSec: END + 600,
+      open: false,
+      fetchBars: async () => { if (fail) throw new Error("down"); return bars(390); },
+    });
+    await service.get();
+    fail = true;
+    advance(3600);
+    const a = (await service.get()).indexes[0];
+    expect(a.status).toBe("ok");
+    expect(a.staleFromError).toBe(true);
   });
 
   it("shows Unavailable, not a neutral arrow, when open but no bars have arrived", async () => {
@@ -162,6 +204,14 @@ describe("fetchIndexBars", () => {
     const b = await fetchIndexBars("^GSPC", { fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(b.sessionStart).toBe(START);   // Fri 9:30 ET
     expect(b.sessionEnd).toBe(END);       // Fri 16:00 ET
+  });
+
+  it("throws when timestamps and closes have different lengths", async () => {
+    const bad = structuredClone(body);
+    bad.chart.result[0].indicators.quote[0].close = [7670.1];
+    const fetchImpl = async () => new Response(JSON.stringify(bad));
+    await expect(fetchIndexBars("^GSPC", { fetchImpl: fetchImpl as unknown as typeof fetch }))
+      .rejects.toThrow("mismatched");
   });
 
   it("throws on a non-OK status", async () => {
