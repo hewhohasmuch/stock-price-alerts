@@ -6,7 +6,7 @@ This file provides guidance to Codex and other coding agents when working with c
 
 ```bash
 npm run build      # tsc --noEmit — type-check src/ and api/, no output
-npm test           # vitest run tests/alert-evaluator.test.ts (the only suite run in CI/pre-commit)
+npm test           # vitest run tests/alert-evaluator.test.ts (the default suite; there is no CI or pre-commit hook)
 npm run test:all   # vitest run — all test files, see caveat below
 npm run cli -- <cmd>   # run the CLI (tsx src/cli.ts)
 npm run web         # run the Express dashboard locally (tsx src/server.ts), http://localhost:3000
@@ -29,7 +29,7 @@ This is a single Node/TypeScript backend with three entry points sharing one ser
 
 ### Data flow of a price check (`checkPrices()` in `src/scheduler.ts`)
 
-1. `isMarketOpen()` (`src/utils/market-hours.ts`) gates the whole check — queries the Alpaca clock API if `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` are set, otherwise falls back to a hardcoded NYSE-hours calculation. If Alpaca isn't configured, market is assumed **closed** (fails safe, not open).
+1. `isMarketOpen()` (`src/utils/market-hours.ts`) gates the whole check. If `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` aren't set, the market is assumed **closed** (fails safe, not open). If they are set, it queries the Alpaca clock API and falls back to a hardcoded NYSE-hours calculation only when Alpaca returns an error or is unreachable.
 2. `getEnabledAlerts()` (`src/db.ts`) loads all enabled alerts across all users, joined with each user's notification email.
 3. `fetchPrices()` (`src/services/price-fetcher.ts`) pulls quotes from Yahoo Finance's undocumented chart API, sequentially per symbol (avoids rate limiting), with a 30s in-memory cache keyed by the sorted symbol set.
 4. `evaluateAlerts()` (`src/services/alert-evaluator.ts`) dispatches each alert to a per-`alertType` evaluator (strategy pattern — see below) and returns both triggered alerts and any evaluator-mutated `state` that needs persisting (e.g. a ratcheted trailing high).
