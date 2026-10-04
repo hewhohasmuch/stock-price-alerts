@@ -75,6 +75,27 @@ export async function initDb(): Promise<void> {
     -- UNIQUE constraint on username is case-sensitive, but lookups treat
     -- usernames as case-insensitive).
     CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_idx ON users (LOWER(username));
+
+    -- Migration: account recovery (email verification, session revocation, one-time tokens).
+    -- email_verified_at is added WITH a default so rows that exist at migration time are
+    -- grandfathered as verified; the default is then dropped so new users start unverified.
+    -- Both statements are no-ops on later runs.
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ DEFAULT now();
+    ALTER TABLE users ALTER COLUMN email_verified_at DROP DEFAULT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;
+
+    CREATE TABLE IF NOT EXISTS account_tokens (
+      token_hash  TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      purpose     TEXT NOT NULL CHECK (purpose IN ('reset', 'verify_email')),
+      email       TEXT NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at  TIMESTAMPTZ NOT NULL,
+      used_at     TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS account_tokens_user_idx ON account_tokens (user_id, purpose, created_at);
+    CREATE INDEX IF NOT EXISTS account_tokens_email_idx ON account_tokens (LOWER(email), created_at);
+    DELETE FROM account_tokens WHERE created_at < now() - INTERVAL '24 hours';
   `);
 }
 
@@ -122,15 +143,16 @@ export async function checkRateLimit(ip: string): Promise<{ allowed: boolean; re
 
 // ── User functions ──────────────────────────────────────────────────────
 
-export async function createUser(username: string, password: string): Promise<User> {
+export async function createUser(username: string, password: string, email?: string): Promise<User> {
   const id = randomUUID();
   const passwordHash = await bcrypt.hash(password, 10);
   try {
     const { rows } = await pool.query(
-      `INSERT INTO users (id, username, password_hash)
-       VALUES ($1, $2, $3)
-       RETURNING id, username, password_hash AS "passwordHash", notification_email AS "notificationEmail", created_at AS "createdAt"`,
-      [id, username, passwordHash],
+      `INSERT INTO users (id, username, password_hash, notification_email)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, username, password_hash AS "passwordHash", notification_email AS "notificationEmail", created_at AS "createdAt",
+              session_version AS "sessionVersion", (email_verified_at IS NOT NULL) AS "emailVerified"`,
+      [id, username, passwordHash, email ?? null],
     );
     return { ...rows[0], createdAt: rows[0].createdAt.toISOString() };
   } catch (err: any) {
@@ -141,7 +163,8 @@ export async function createUser(username: string, password: string): Promise<Us
 
 export async function verifyUser(username: string, password: string): Promise<User | null> {
   const { rows } = await pool.query(
-    `SELECT id, username, password_hash AS "passwordHash", notification_email AS "notificationEmail", created_at AS "createdAt"
+    `SELECT id, username, password_hash AS "passwordHash", notification_email AS "notificationEmail", created_at AS "createdAt",
+              session_version AS "sessionVersion", (email_verified_at IS NOT NULL) AS "emailVerified"
      FROM users WHERE LOWER(username) = LOWER($1)`,
     [username],
   );
@@ -154,7 +177,8 @@ export async function verifyUser(username: string, password: string): Promise<Us
 
 export async function findUserById(id: string): Promise<User | null> {
   const { rows } = await pool.query(
-    `SELECT id, username, password_hash AS "passwordHash", notification_email AS "notificationEmail", created_at AS "createdAt"
+    `SELECT id, username, password_hash AS "passwordHash", notification_email AS "notificationEmail", created_at AS "createdAt",
+              session_version AS "sessionVersion", (email_verified_at IS NOT NULL) AS "emailVerified"
      FROM users WHERE id = $1`,
     [id],
   );
@@ -164,19 +188,13 @@ export async function findUserById(id: string): Promise<User | null> {
 
 export async function findUserByUsername(username: string): Promise<User | null> {
   const { rows } = await pool.query(
-    `SELECT id, username, password_hash AS "passwordHash", notification_email AS "notificationEmail", created_at AS "createdAt"
+    `SELECT id, username, password_hash AS "passwordHash", notification_email AS "notificationEmail", created_at AS "createdAt",
+              session_version AS "sessionVersion", (email_verified_at IS NOT NULL) AS "emailVerified"
      FROM users WHERE LOWER(username) = LOWER($1)`,
     [username],
   );
   if (rows.length === 0) return null;
   return { ...rows[0], createdAt: rows[0].createdAt.toISOString() };
-}
-
-export async function updateUserNotificationEmail(userId: string, email: string): Promise<void> {
-  await pool.query(
-    `UPDATE users SET notification_email = $1 WHERE id = $2`,
-    [email, userId],
-  );
 }
 
 // ── Alert functions ─────────────────────────────────────────────────────
@@ -332,7 +350,7 @@ export async function getEnabledAlerts(): Promise<StockAlert[]> {
        a.created_at AS "createdAt",
        a.alert_type AS "alertType", a.params_json AS "params",
        a.state_json AS "state", a.last_triggered_at AS "lastTriggeredAt",
-       u.notification_email AS "userEmail"
+       CASE WHEN u.email_verified_at IS NOT NULL THEN u.notification_email END AS "userEmail"
      FROM alerts a
      JOIN users u ON u.id = a.user_id
      WHERE a.enabled = true`,
