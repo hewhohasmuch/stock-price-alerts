@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm run build      # tsc --noEmit — type-check src/ and api/, no output
-npm test           # vitest run tests/alert-evaluator.test.ts (the default suite; there is no CI or pre-commit hook)
+npm test           # vitest run — alert-evaluator + market-direction suites (no CI or pre-commit hook)
 npm run test:all   # vitest run — all test files, see caveat below
 npm run cli -- <cmd>   # run the CLI (tsx src/cli.ts)
 npm run web         # run the Express dashboard locally (tsx src/server.ts), http://localhost:3000
@@ -45,6 +45,24 @@ This is a single Node/TypeScript backend with three entry points sharing one ser
 
 Adding a new alert type means: extend `AlertType`/`AlertParams` in `src/types.ts`, add an `AlertEvaluator` to the `evaluators` map, and add validation in `validateAlertParams()` in `src/server.ts`.
 
+### Market direction strip (`src/services/market-direction*.ts`)
+
+The dashboard shows one arrow for each of `^GSPC ^DJI ^IXIC ^RUT`, served by `GET /api/market-direction` (requires login). It's independent of alerts and the scheduler, and stores nothing in the database.
+
+- **`market-direction.ts`** is the pure scoring. It takes Yahoo 1-minute bars (`interval=1m&range=1d`) and:
+  - keeps completed regular-session bars only (Yahoo's `currentTradingPeriod.regular`, which excludes the 16:00 print)
+  - fills up to 3 consecutive missing minutes and needs ≥90% coverage in the window
+  - uses a 90-minute baseline, with the prior close filling the pre-open part of the window
+  - scores `s = clamp(distance/fullScale) × f`, where f is the share of window minutes on the current side of their own baseline
+- **`market-direction-service.ts`** handles I/O:
+  - fetches symbols one at a time with an 8s timeout each
+  - uses a shared in-flight promise and a 60s cache
+  - isolates failures per symbol, keeping the last good reading (lost on a serverless cold start)
+  - sets `marketState` and `dataQuality` as separate fields
+
+  `marketState` is open only if `isMarketOpen()` is true **and** the bars are from today's session. That guards against the `isNyseHours()` fallback in `src/utils/market-hours.ts`, which ignores holidays and early closes.
+- Per-index `fullScale` and `lagThresholdSec` live in `INDEXES`. They're still initial defaults (300s lag) until calibrated from a live weekday session — Task 6 of `docs/superpowers/plans/2026-10-04-market-direction-arrows.md`; see also the spec `docs/superpowers/specs/2026-10-04-market-direction-arrows-design.md`.
+
 ### Database (`src/db.ts`)
 
 Single Postgres pool (`pg`), schema created/migrated idempotently on startup via `initDb()` (`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF NOT EXISTS` — there is no separate migrations directory/tool). `src/server.ts` calls `initDb()` lazily on first request (serverless-safe) rather than at module load. Typed-alert params/state are stored as `JSONB` columns (`params_json`, `state_json`); legacy alerts use dedicated `above_price`/`below_price` columns. Prefers `DATABASE_URL_UNPOOLED` over `DATABASE_URL` (Neon's pooled connection blocks startup params).
@@ -62,6 +80,8 @@ The alerts table also carries the Shortlist bookkeeping as dedicated scalar colu
 The dashboard has two tabs (`showWatchlistTab()`/`showShortlistTab()`):
 - **Watchlist** — the "Add Alert" form + the alerts table (the original view).
 - **Shortlist** — a table (Ticker/Price/Shares/Total/Stage) of alerts the user has starred via the bookmark toggle on each Watchlist row. It's a **derived client-side view**: `renderShortlistTable()` filters the same `allAlerts` array loaded by `loadAlerts()` for `shortlisted === true` (sorted by symbol) — no separate fetch. Price reuses the existing `.price-cell`/`loadPrices()` mechanism; Total (`Price × Shares`) and the staged-only subtotal (`recomputeShortlistTotals()`) are computed client-side and never persisted. Mutations follow the app's fire-`PATCH`-then-`loadAlerts()` convention, which re-renders both tabs and keeps them in sync.
+
+A market-direction strip (`#marketStrip`, `loadMarketDirection()`) sits above the tab buttons and refreshes in the same 60s interval as prices. Arrow angle = `score × 90°`; color = `color-mix(in oklab, …)` between four stops (`mdColor()`).
 
 ## Configuration
 
