@@ -4,6 +4,8 @@ export interface User {
   passwordHash: string;
   notificationEmail?: string;
   createdAt: string;
+  sessionVersion: number;
+  emailVerified: boolean;
 }
 
 export type AlertType = "absolute-threshold" | "percent-change" | "trailing-high";
