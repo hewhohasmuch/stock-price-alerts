@@ -153,6 +153,17 @@ describe("fetchIndexBars", () => {
     expect(String(fetchImpl.mock.calls[0][0])).toContain("%5EGSPC?interval=1m&range=1d");
   });
 
+  it("falls back to the bars' own session when Yahoo has already rolled to the next day", async () => {
+    // Pre-open Monday: `regular` says Mon 10/5, but the bars are still Friday's.
+    const monStart = Date.UTC(2026, 9, 5, 13, 30) / 1000;
+    const rolled = structuredClone(body);
+    rolled.chart.result[0].meta.currentTradingPeriod.regular = { start: monStart, end: monStart + 390 * 60 };
+    const fetchImpl = async () => new Response(JSON.stringify(rolled));
+    const b = await fetchIndexBars("^GSPC", { fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(b.sessionStart).toBe(START);   // Fri 9:30 ET
+    expect(b.sessionEnd).toBe(END);       // Fri 16:00 ET
+  });
+
   it("throws on a non-OK status", async () => {
     const fetchImpl = async () => new Response("nope", { status: 429 });
     await expect(fetchIndexBars("^RUT", { fetchImpl: fetchImpl as unknown as typeof fetch }))

@@ -63,13 +63,36 @@ export async function fetchIndexBars(
   if (typeof priorClose !== "number" || typeof regular?.start !== "number" || typeof regular?.end !== "number") {
     throw new Error(`Yahoo chart response for ${symbol} is missing session data`);
   }
+  const timestamps: number[] = result.timestamp ?? [];
+  let sessionStart: number = regular.start;
+  let sessionEnd: number = regular.end;
+  // Pre-open, Yahoo may already report today's session while the bars are still the
+  // previous day's. Anchor to the bars' own session so the strip shows it as Closed.
+  const lastTs = timestamps.length ? Math.max(...timestamps) : NaN;
+  if (Number.isFinite(lastTs) && lastTs < sessionStart) {
+    const day = nyDate(lastTs);
+    sessionStart = nyWallClock(day, 9, 30);
+    sessionEnd = nyWallClock(day, 16, 0);  // after an early close, bars simply end sooner
+  }
   return {
-    timestamps: result.timestamp ?? [],
+    timestamps,
     closes: result.indicators?.quote?.[0]?.close ?? [],
     priorClose,
-    sessionStart: regular.start,
-    sessionEnd: regular.end,
+    sessionStart,
+    sessionEnd,
   };
+}
+
+/** Unix seconds for hh:mm America/New_York wall-clock time on a YYYY-MM-DD date. */
+function nyWallClock(day: string, hh: number, mm: number): number {
+  const [y, m, d] = day.split("-").map(Number);
+  const asUtc = Date.UTC(y, m - 1, d, hh, mm) / 1000;
+  const offset = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", timeZoneName: "longOffset" })
+    .formatToParts(new Date(asUtc * 1000))
+    .find(p => p.type === "timeZoneName")?.value ?? "GMT-05:00";   // e.g. "GMT-04:00"
+  const match = /GMT([+-])(\d{2}):(\d{2})/.exec(offset);
+  const minutes = match ? (match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3])) : -300;
+  return asUtc - minutes * 60;
 }
 
 export interface ServiceDeps {
