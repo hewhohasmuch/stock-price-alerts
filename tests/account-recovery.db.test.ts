@@ -6,6 +6,8 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 const url = process.env.TEST_DATABASE_URL;
 const isLocal = !!url && /^(localhost|127\.0\.0\.1)$/.test(new URL(url).hostname);
 if (url && !isLocal) throw new Error("TEST_DATABASE_URL must point at localhost");
+// These tests drop/re-add columns and create users; never let them touch a dev database.
+if (url && !/test/i.test(new URL(url).pathname)) throw new Error('TEST_DATABASE_URL database name must contain "test"');
 if (isLocal) {
   // db.ts builds its pool from these at import time.
   process.env.DATABASE_URL = url;
