@@ -11,19 +11,35 @@ import {
   updateAlertNotes, updateAlertThresholds, updateAlertParams, resetBreach,
   setAlertShortlisted, setAlertStaged, updateAlertShares,
   resetTypedTrigger, createUser, verifyUser,
-  findUserById, updateUserNotificationEmail,
+  findUserById,
 } from "./db.js";
 import type { AlertParams, AlertType, PercentChangeParams } from "./types.js";
 import { fetchSinglePrice, fetchPrices } from "./services/price-fetcher.js";
 import { checkPrices } from "./scheduler.js";
 import { isMarketOpen } from "./utils/market-hours.js";
+import { config } from "./config.js";
+import { createSmtpMailer } from "./services/email-sender.js";
+import { createPgAccountStore } from "./services/account-store.js";
+import {
+  createAccountRecovery, isSessionCurrent, validateNewPassword, validateNewUsername,
+} from "./services/account-recovery.js";
 
 declare module "express-session" {
   interface SessionData {
     userId: string;
     username: string;
+    sv: number;   // users.session_version at login; see requireAuth
   }
 }
+
+const accountStore = createPgAccountStore(pool);
+const recovery = createAccountRecovery({
+  store: accountStore,
+  mailer: createSmtpMailer(),
+  appUrl: config.appUrl,
+});
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const FORGOT_MESSAGE = "If an account matches, we've sent a reset link to its email.";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -114,24 +130,62 @@ app.get("/health", (_req, res) => {
 
 // ── Auth routes ─────────────────────────────────────────────────────────
 
-app.post("/api/auth/register", rateLimitAuth, async (req, res) => {
+// CSRF protection for account mutations: the session cookie is SameSite=Strict, and these
+// routes only accept JSON bodies (a cross-site HTML form cannot send application/json).
+function requireJson(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (!req.is("application/json")) {
+    res.status(415).json({ error: "Content-Type must be application/json" });
+    return;
+  }
+  next();
+}
+
+/** Valid only while session.sv matches users.session_version (bumped on password change/reset). */
+async function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const userId = req.session.userId;
+  if (!userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+  try {
+    const current = await accountStore.getSessionVersion(userId);
+    if (!isSessionCurrent(req.session.sv, current)) {
+      req.session.destroy(() => res.status(401).json({ error: "Not authenticated" }));
+      return;
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+app.post("/api/auth/register", requireJson, rateLimitAuth, async (req, res) => {
   try {
     const { username, password } = req.body;
-    if (!username || !password) {
-      res.status(400).json({ error: "username and password required" });
+    const email = typeof req.body.email === "string" ? req.body.email.trim() : "";
+    if (typeof username !== "string" || !username || typeof password !== "string") {
+      res.status(400).json({ error: "username, email and password required" });
       return;
     }
-    if (username.length < 3 || username.length > 30) {
-      res.status(400).json({ error: "Username must be 3-30 characters" });
+    const usernameRule = validateNewUsername(username);
+    if (usernameRule) {
+      res.status(400).json({ error: usernameRule });
       return;
     }
-    if (password.length < 6) {
-      res.status(400).json({ error: "Password must be at least 6 characters" });
+    if (!EMAIL_RE.test(email)) {
+      res.status(400).json({ error: "A valid email address is required" });
       return;
     }
-    const user = await createUser(username, password);
+    const rule = validateNewPassword(password);
+    if (rule) {
+      res.status(400).json({ error: rule });
+      return;
+    }
+    const user = await createUser(username, password, email);
     req.session.userId = user.id;
     req.session.username = user.username;
+    req.session.sv = user.sessionVersion;
+    await recovery.requestEmailVerification(user.id, email);
     res.status(201).json({ id: user.id, username: user.username });
   } catch (err) {
     const msg = (err as Error).message;
@@ -158,6 +212,7 @@ app.post("/api/auth/login", rateLimitAuth, async (req, res) => {
     }
     req.session.userId = user.id;
     req.session.username = user.username;
+    req.session.sv = user.sessionVersion;
     res.json({ id: user.id, username: user.username });
   } catch (err) {
     console.error("POST /api/auth/login error:", err);
@@ -171,17 +226,16 @@ app.post("/api/auth/logout", (req, res) => {
   });
 });
 
-app.get("/api/auth/me", async (req, res) => {
-  if (!req.session.userId) {
-    res.status(401).json({ error: "Not authenticated" });
-    return;
-  }
+app.get("/api/auth/me", requireAuth, async (req, res) => {
   try {
-    const user = await findUserById(req.session.userId);
+    const userId = req.session.userId!;
+    const [user, status] = await Promise.all([findUserById(userId), accountStore.getAccountStatus(userId)]);
     res.json({
-      id: req.session.userId,
+      id: userId,
       username: req.session.username,
       notificationEmail: user?.notificationEmail ?? null,
+      emailVerified: status?.emailVerified ?? false,
+      pendingEmail: status?.pendingEmail ?? null,
     });
   } catch (err) {
     console.error("GET /api/auth/me error:", err);
@@ -189,45 +243,111 @@ app.get("/api/auth/me", async (req, res) => {
   }
 });
 
-// ── Settings routes ─────────────────────────────────────────────────────
-
-app.patch("/api/settings/email", async (req, res) => {
-  if (!req.session.userId) {
-    res.status(401).json({ error: "Not authenticated" });
-    return;
-  }
+// Always the same answer, so it can't be used to discover accounts (429 only for IP throttling).
+app.post("/api/auth/forgot", requireJson, rateLimitAuth, async (req, res) => {
   try {
-    const { email } = req.body;
-    if (typeof email !== "string" || !email.trim()) {
-      res.status(400).json({ error: "email is required" });
+    await recovery.requestReset(req.body.identifier);
+  } catch (err) {
+    console.error("POST /api/auth/forgot error:", (err as Error).message);
+  }
+  res.json({ ok: true, message: FORGOT_MESSAGE });
+});
+
+app.post("/api/auth/reset", requireJson, rateLimitAuth, async (req, res) => {
+  try {
+    const result = await recovery.resetPassword(req.body.token, req.body.password);
+    if (!result.ok) {
+      res.status(400).json({ error: result.error });
       return;
     }
-    const trimmed = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+    // session_version already revokes every session; deleting the rows is cleanup. This
+    // browser is logged out too, even if it was logged in as a different account.
+    await accountStore.deleteSessions(result.userId);
+    req.session.destroy(() => res.json({ ok: true }));
+  } catch (err) {
+    console.error("POST /api/auth/reset error:", (err as Error).message);
+    res.status(500).json({ error: "Password reset failed" });
+  }
+});
+
+app.post("/api/auth/verify-email", requireJson, rateLimitAuth, async (req, res) => {
+  try {
+    const result = await recovery.verifyEmail(req.body.token);
+    if (!result.ok) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ ok: true, email: result.email });
+  } catch (err) {
+    console.error("POST /api/auth/verify-email error:", (err as Error).message);
+    res.status(500).json({ error: "Email verification failed" });
+  }
+});
+
+// ── Settings routes ─────────────────────────────────────────────────────
+
+app.post("/api/settings/resend-verification", requireJson, rateLimitAuth, requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId!;
+    const [user, status] = await Promise.all([findUserById(userId), accountStore.getAccountStatus(userId)]);
+    const target = status?.pendingEmail ?? (status?.emailVerified ? null : user?.notificationEmail ?? null);
+    if (target) await recovery.requestEmailVerification(userId, target);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/settings/resend-verification error:", (err as Error).message);
+    res.status(500).json({ error: "Failed to send verification email" });
+  }
+});
+
+// The new address only takes effect once confirmed; the current address keeps working until then.
+app.patch("/api/settings/email", requireJson, rateLimitAuth, requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId!;
+    const email = typeof req.body.email === "string" ? req.body.email.trim() : "";
+    if (!EMAIL_RE.test(email)) {
       res.status(400).json({ error: "Invalid email address" });
       return;
     }
-    await updateUserNotificationEmail(req.session.userId, trimmed);
-    res.json({ ok: true });
+    const user = await verifyUser(req.session.username!, String(req.body.currentPassword ?? ""));
+    if (!user || user.id !== userId) {
+      res.status(400).json({ error: "Current password is incorrect." });
+      return;
+    }
+    await recovery.requestEmailVerification(userId, email);
+    res.json({ ok: true, pendingEmail: email });
   } catch (err) {
     console.error("PATCH /api/settings/email error:", err);
     res.status(500).json({ error: "Failed to update email" });
   }
 });
 
-// ── Auth middleware ──────────────────────────────────────────────────────
-
-function requireAuth(
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction
-) {
-  if (!req.session.userId) {
-    res.status(401).json({ error: "Not authenticated" });
-    return;
+app.patch("/api/settings/password", requireJson, rateLimitAuth, requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId!;
+    const username = req.session.username!;
+    const result = await recovery.changePassword(userId, req.body.currentPassword, req.body.newPassword);
+    if (!result.ok) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    // Keep this browser logged in under a fresh session id with the new version;
+    // every other session fails the version check.
+    req.session.regenerate(async (err) => {
+      if (err) {
+        res.status(500).json({ error: "Password changed; please log in again." });
+        return;
+      }
+      req.session.userId = userId;
+      req.session.username = username;
+      req.session.sv = result.sessionVersion;
+      await accountStore.deleteSessions(userId, req.sessionID);
+      res.json({ ok: true });
+    });
+  } catch (err) {
+    console.error("PATCH /api/settings/password error:", (err as Error).message);
+    res.status(500).json({ error: "Failed to change password" });
   }
-  next();
-}
+});
 
 // ── Typed alert param validation ─────────────────────────────────────────
 

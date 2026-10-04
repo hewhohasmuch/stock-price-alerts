@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <meta name="theme-color" content="#4a6cf7">
+  <meta name="referrer" content="no-referrer">
   <title>Stock Price Alert Dashboard</title>
   <link rel="icon" href="/favicon-64.png" type="image/png" sizes="64x64">
   <link rel="icon" href="/favicon.ico" sizes="64x64">
@@ -176,6 +177,15 @@
     .auth-toggle a:hover { text-decoration: underline; }
 
     .hidden { display: none !important; }
+    .field-hint { font-size: 12px; color: var(--text-muted); margin: -8px 0 12px; }
+    .auth-links { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .flash-msg {
+      position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 100;
+      max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 6px; font-size: 14px;
+      background: var(--badge-on-bg); color: var(--badge-on-color); box-shadow: 0 2px 8px var(--card-shadow);
+    }
+    .flash-msg.error { background: var(--badge-off-bg); color: var(--badge-off-color); }
+    .email-status { font-size: 13px; color: var(--text-secondary); margin-top: 6px; }
 
     /* Modal */
     .modal-overlay {
@@ -339,16 +349,48 @@
           <label for="authUsername">Username</label>
           <input id="authUsername" type="text" required autocomplete="username">
         </div>
+        <div class="form-group hidden" id="authEmailGroup">
+          <label for="authEmail">Email</label>
+          <input id="authEmail" type="email" autocomplete="email">
+        </div>
         <div class="form-group">
           <label for="authPassword">Password</label>
           <input id="authPassword" type="password" required autocomplete="current-password">
         </div>
+        <div class="field-hint hidden" id="authPasswordHint">At least 15 characters. A passphrase like "blue coffee ticker tape" works well.</div>
         <button type="submit" class="btn-primary" id="authBtn">Log In</button>
         <div id="authError" class="error-msg"></div>
+        <div id="authNotice" class="success-msg hidden"></div>
       </form>
-      <div class="auth-toggle">
-        <span id="authToggleText">Don't have an account?</span>
-        <a id="authToggleLink" onclick="toggleAuthMode()">Register</a>
+      <form id="forgotForm" class="hidden">
+        <div class="form-group">
+          <label for="forgotIdentifier">Username or email</label>
+          <input id="forgotIdentifier" type="text" required autocomplete="username">
+        </div>
+        <button type="submit" class="btn-primary" id="forgotBtn">Send reset link</button>
+        <div id="forgotError" class="error-msg"></div>
+        <div id="forgotNotice" class="success-msg hidden"></div>
+      </form>
+      <form id="resetForm" class="hidden">
+        <div class="form-group">
+          <label for="resetPassword1">New password</label>
+          <input id="resetPassword1" type="password" required autocomplete="new-password">
+        </div>
+        <div class="field-hint">At least 15 characters. A passphrase like "blue coffee ticker tape" works well.</div>
+        <div class="form-group">
+          <label for="resetPassword2">Repeat new password</label>
+          <input id="resetPassword2" type="password" required autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn-primary" id="resetBtn">Set new password</button>
+        <div id="resetError" class="error-msg"></div>
+      </form>
+      <div class="auth-toggle auth-links" id="authLinks">
+        <span><span id="authToggleText">Don't have an account?</span>
+          <a id="authToggleLink" onclick="toggleAuthMode()">Register</a></span>
+        <a id="forgotLink" onclick="showForgotForm()">Forgot password?</a>
+      </div>
+      <div class="auth-toggle hidden" id="backToLogin">
+        <a onclick="showLoginForm()">Back to log in</a>
       </div>
     </div>
   </div>
@@ -495,10 +537,39 @@
             <input id="settingsEmail" type="email" placeholder="you@example.com" style="width: 100%; max-width: 320px;" readonly>
             <button type="button" id="editEmailBtn" class="btn-secondary" onclick="enableEmailEdit()">Edit Email</button>
           </div>
+          <div id="emailStatus" class="email-status hidden">
+            <span id="emailStatusText"></span>
+            <a id="resendVerifyLink" onclick="resendVerification()" style="color: var(--primary); cursor: pointer;">Resend link</a>
+          </div>
+        </div>
+        <div class="form-group hidden" id="emailPasswordGroup" style="margin-bottom: 14px;">
+          <label for="settingsEmailPassword">Current password</label>
+          <input id="settingsEmailPassword" type="password" autocomplete="current-password" style="width: 100%; max-width: 320px;">
         </div>
         <button type="submit" class="btn-primary hidden" id="settingsBtn">Save Email</button>
         <div id="settingsError" class="error-msg"></div>
-        <div id="settingsSuccess" class="success-msg hidden">Email saved successfully.</div>
+        <div id="settingsSuccess" class="success-msg hidden">Check your new inbox for a confirmation link.</div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Change Password</h2>
+      <form id="passwordForm">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label for="pwCurrent">Current password</label>
+          <input id="pwCurrent" type="password" required autocomplete="current-password" style="width: 100%; max-width: 320px;">
+        </div>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label for="pwNew1">New password</label>
+          <input id="pwNew1" type="password" required autocomplete="new-password" style="width: 100%; max-width: 320px;">
+        </div>
+        <div class="field-hint">At least 15 characters. A passphrase like "blue coffee ticker tape" works well.</div>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label for="pwNew2">Repeat new password</label>
+          <input id="pwNew2" type="password" required autocomplete="new-password" style="width: 100%; max-width: 320px;">
+        </div>
+        <button type="submit" class="btn-primary" id="pwBtn">Change password</button>
+        <div id="pwError" class="error-msg"></div>
+        <div id="pwSuccess" class="success-msg hidden">Password changed. Other devices were logged out.</div>
       </form>
     </div>
   </div>
@@ -506,11 +577,12 @@
   <!-- No-email modal -->
   <div id="noEmailModal" class="modal-overlay hidden">
     <div class="modal-card">
-      <h3>Email Required</h3>
-      <p>An email address is needed for sending alerts to your inbox!</p>
+      <h3 id="emailModalTitle">Email Required</h3>
+      <p id="emailModalText">An email address is needed for sending alerts to your inbox!</p>
       <a onclick="goToSettings()">Go to Settings</a>
     </div>
   </div>
+  <div id="flashMsg" class="flash-msg hidden" role="status"></div>
 
   <script>
     // ── Auth state ────────────────────────────────────────────────────────
@@ -539,7 +611,133 @@
       authToggleText.textContent = isRegisterMode ? "Already have an account?" : "Don't have an account?";
       authToggleLink.textContent = isRegisterMode ? "Log in" : "Register";
       authPassword.autocomplete  = isRegisterMode ? "new-password" : "current-password";
+      document.getElementById("authEmailGroup").classList.toggle("hidden", !isRegisterMode);
+      document.getElementById("authEmail").required = isRegisterMode;
+      document.getElementById("authPasswordHint").classList.toggle("hidden", !isRegisterMode);
+      document.getElementById("forgotLink").classList.toggle("hidden", isRegisterMode);
       authError.textContent = "";
+    }
+
+    // ── Forgot / reset password ───────────────────────────────────────────
+    let resetToken = null;
+
+    function setAuthView(view) {          // "login" | "forgot" | "reset"
+      authForm.classList.toggle("hidden", view !== "login");
+      document.getElementById("forgotForm").classList.toggle("hidden", view !== "forgot");
+      document.getElementById("resetForm").classList.toggle("hidden", view !== "reset");
+      document.getElementById("authLinks").classList.toggle("hidden", view !== "login");
+      document.getElementById("backToLogin").classList.toggle("hidden", view === "login");
+      authTitle.textContent = view === "forgot" ? "Forgot Password"
+        : view === "reset" ? "Set New Password"
+        : (isRegisterMode ? "Create Account" : "Log In");
+    }
+
+    function showForgotForm() {
+      document.getElementById("forgotError").textContent = "";
+      document.getElementById("forgotNotice").classList.add("hidden");
+      setAuthView("forgot");
+      document.getElementById("forgotIdentifier").focus();
+    }
+
+    function showLoginForm(notice) {
+      resetToken = null;
+      if (isRegisterMode) toggleAuthMode();
+      setAuthView("login");
+      const n = document.getElementById("authNotice");
+      n.textContent = notice || "";
+      n.classList.toggle("hidden", !notice);
+    }
+
+    function showResetForm(token) {
+      resetToken = token;
+      showAuth();
+      document.getElementById("resetError").textContent = "";
+      setAuthView("reset");
+      document.getElementById("resetPassword1").focus();
+    }
+
+    function flash(message, isError) {
+      const el = document.getElementById("flashMsg");
+      el.textContent = message;
+      el.classList.toggle("error", !!isError);
+      el.classList.remove("hidden");
+      clearTimeout(flash.timer);
+      flash.timer = setTimeout(() => el.classList.add("hidden"), 6000);
+    }
+
+    async function postJson(url, body, method = "POST") {
+      const res = await fetch(url, {
+        method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}),
+      });
+      let data = {};
+      try { data = await res.json(); } catch {}
+      return { ok: res.ok, status: res.status, data };
+    }
+
+    document.getElementById("forgotForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("forgotBtn");
+      const err = document.getElementById("forgotError");
+      const notice = document.getElementById("forgotNotice");
+      err.textContent = "";
+      notice.classList.add("hidden");
+      btn.disabled = true;
+      try {
+        const r = await postJson("/api/auth/forgot", { identifier: document.getElementById("forgotIdentifier").value.trim() });
+        if (r.ok) {
+          notice.textContent = r.data.message + " The link works for 30 minutes.";
+          notice.classList.remove("hidden");
+        } else {
+          err.textContent = r.data.error || "Something went wrong.";
+        }
+      } catch {
+        err.textContent = "Network error.";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("resetForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = document.getElementById("resetError");
+      const p1 = document.getElementById("resetPassword1").value;
+      const p2 = document.getElementById("resetPassword2").value;
+      err.textContent = "";
+      if (p1 !== p2) { err.textContent = "Passwords don't match."; return; }
+      const btn = document.getElementById("resetBtn");
+      btn.disabled = true;
+      try {
+        const r = await postJson("/api/auth/reset", { token: resetToken, password: p1 });
+        if (r.ok) {
+          document.getElementById("resetForm").reset();
+          showLoginForm("Password updated, please log in.");
+        } else {
+          err.textContent = r.data.error || "Something went wrong.";
+        }
+      } catch {
+        err.textContent = "Network error.";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    async function confirmEmailLink(token) {
+      try {
+        const r = await postJson("/api/auth/verify-email", { token });
+        if (r.ok) flash("Email confirmed. Alerts and password resets will go to " + r.data.email + ".");
+        else flash(r.data.error || "That confirmation link didn't work.", true);
+      } catch {
+        flash("Network error while confirming your email.", true);
+      }
+    }
+
+    async function resendVerification() {
+      try {
+        const r = await postJson("/api/settings/resend-verification", {});
+        flash(r.ok ? "Confirmation link sent. Check your inbox." : (r.data.error || "Couldn't send the link."), !r.ok);
+      } catch {
+        flash("Network error.", true);
+      }
     }
 
     function showAuth() {
@@ -557,11 +755,16 @@
       dashboard.classList.remove("hidden");
       headerRight.classList.remove("hidden");
       headerUser.textContent = currentUser ? currentUser.username : "";
-      if (currentUser && !currentUser.notificationEmail) {
-        noEmailModal.classList.remove("hidden");
-      } else {
-        noEmailModal.classList.add("hidden");
-      }
+      // An address waiting for confirmation (new, or replacing none) means "confirm", not "add".
+      const awaiting = currentUser && (currentUser.pendingEmail ||
+        (currentUser.notificationEmail && !currentUser.emailVerified ? currentUser.notificationEmail : null));
+      const needsEmail = currentUser && !currentUser.notificationEmail && !awaiting;
+      const needsVerify = !!awaiting && !currentUser.emailVerified;
+      document.getElementById("emailModalTitle").textContent = needsVerify ? "Confirm Your Email" : "Email Required";
+      document.getElementById("emailModalText").textContent = needsVerify
+        ? "Check " + awaiting + " for a confirmation link. Alerts and password resets wait until you confirm it."
+        : "An email address is needed for sending alerts to your inbox!";
+      noEmailModal.classList.toggle("hidden", !(needsEmail || needsVerify));
       hideAddForm();
       showWatchlistTab();
       loadAlerts();
@@ -577,18 +780,41 @@
       document.getElementById("settingsEmail").value = emailVal;
       document.getElementById("settingsError").textContent = "";
       document.getElementById("settingsSuccess").classList.add("hidden");
+      document.getElementById("emailPasswordGroup").classList.add("hidden");
+      document.getElementById("settingsEmailPassword").value = "";
+      document.getElementById("passwordForm").reset();
+      document.getElementById("pwError").textContent = "";
+      document.getElementById("pwSuccess").classList.add("hidden");
+      renderEmailStatus();
       if (emailVal) {
         document.getElementById("settingsEmail").readOnly = true;
         document.getElementById("editEmailBtn").classList.remove("hidden");
         document.getElementById("settingsBtn").classList.add("hidden");
       } else {
+        // No email yet: the field is already editable, so ask for the password right away.
+        document.getElementById("emailPasswordGroup").classList.remove("hidden");
         document.getElementById("settingsEmail").readOnly = false;
         document.getElementById("editEmailBtn").classList.add("hidden");
         document.getElementById("settingsBtn").classList.remove("hidden");
       }
     }
 
+    function renderEmailStatus() {
+      const status = document.getElementById("emailStatus");
+      const text = document.getElementById("emailStatusText");
+      if (currentUser && currentUser.pendingEmail) {
+        text.textContent = "Waiting for you to confirm " + currentUser.pendingEmail + ". Until then, emails go to your current address.";
+      } else if (currentUser && currentUser.notificationEmail && !currentUser.emailVerified) {
+        text.textContent = "Not confirmed yet. Check your inbox for the confirmation link.";
+      } else {
+        status.classList.add("hidden");
+        return;
+      }
+      status.classList.remove("hidden");
+    }
+
     function enableEmailEdit() {
+      document.getElementById("emailPasswordGroup").classList.remove("hidden");
       document.getElementById("settingsEmail").readOnly = false;
       document.getElementById("settingsEmail").focus();
       document.getElementById("editEmailBtn").classList.add("hidden");
@@ -606,7 +832,9 @@
       authError.textContent = "";
       const username = authUsername.value.trim();
       const password = authPassword.value;
-      if (!username || !password) return;
+      const email = document.getElementById("authEmail").value.trim();
+      if (!username || !password || (isRegisterMode && !email)) return;
+      document.getElementById("authNotice").classList.add("hidden");
 
       authBtn.disabled = true;
       authBtn.textContent = isRegisterMode ? "Registering..." : "Logging in...";
@@ -616,13 +844,14 @@
         const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password }),
+          body: JSON.stringify(isRegisterMode ? { username, email, password } : { username, password }),
         });
         const data = await res.json();
         if (!res.ok) {
           authError.textContent = data.error || "Something went wrong.";
           return;
         }
+        if (isRegisterMode) flash("Account created. Check " + email + " for a confirmation link.");
         // Fetch full user profile (includes notificationEmail)
         const meRes = await fetch("/api/auth/me");
         currentUser = meRes.ok ? await meRes.json() : { id: data.id, username: data.username, notificationEmail: null };
@@ -675,17 +904,22 @@
       settingsBtn.disabled = true;
       settingsBtn.textContent = "Saving...";
       try {
+        const currentPassword = document.getElementById("settingsEmailPassword").value;
         const res = await fetch("/api/settings/email", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({ email, currentPassword }),
         });
         const data = await res.json();
         if (!res.ok) {
           settingsError.textContent = data.error || "Failed to save email.";
           return;
         }
-        currentUser.notificationEmail = email;
+        currentUser.pendingEmail = data.pendingEmail;
+        document.getElementById("settingsEmail").value = currentUser.notificationEmail || "";
+        document.getElementById("settingsEmailPassword").value = "";
+        document.getElementById("emailPasswordGroup").classList.add("hidden");
+        renderEmailStatus();
         settingsSuccess.classList.remove("hidden");
         document.getElementById("settingsEmail").readOnly = true;
         document.getElementById("editEmailBtn").classList.remove("hidden");
@@ -695,6 +929,34 @@
       } finally {
         settingsBtn.disabled = false;
         settingsBtn.textContent = "Save Email";
+      }
+    });
+
+    document.getElementById("passwordForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = document.getElementById("pwError");
+      const ok = document.getElementById("pwSuccess");
+      const btn = document.getElementById("pwBtn");
+      err.textContent = "";
+      ok.classList.add("hidden");
+      const currentPassword = document.getElementById("pwCurrent").value;
+      const newPassword = document.getElementById("pwNew1").value;
+      if (newPassword !== document.getElementById("pwNew2").value) { err.textContent = "New passwords don't match."; return; }
+      btn.disabled = true;
+      try {
+        const r = await postJson("/api/settings/password", { currentPassword, newPassword }, "PATCH");
+        if (r.ok) {
+          document.getElementById("passwordForm").reset();
+          ok.classList.remove("hidden");
+        } else if (r.status === 401) {
+          showAuth();
+        } else {
+          err.textContent = r.data.error || "Failed to change password.";
+        }
+      } catch {
+        err.textContent = "Network error.";
+      } finally {
+        btn.disabled = false;
       }
     });
 
@@ -1262,7 +1524,13 @@
 
     // ── Boot ──────────────────────────────────────────────────────────────
     updateSortArrows();
-    checkAuth();
+    (async function boot() {
+      const link = location.hash.match(/^#(reset|verify)=([A-Za-z0-9_-]+)$/);
+      if (link) history.replaceState(null, "", location.pathname + location.search);
+      if (link && link[1] === "reset") { showResetForm(link[2]); return; }   // opening never uses the link
+      if (link && link[1] === "verify") await confirmEmailLink(link[2]);
+      checkAuth();
+    })();
 
     // Auto-refresh prices every 60 seconds
     setInterval(() => {
