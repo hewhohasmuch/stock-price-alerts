@@ -10,7 +10,10 @@ export const BCRYPT_MAX_BYTES = 72;
 export const RESET_TTL_MINUTES = 30;
 export const VERIFY_TTL_MINUTES = 24 * 60;
 export const MAX_RESETS_PER_ACCOUNT_PER_HOUR = 3;
-export const MAX_EMAILS_PER_ADDRESS_PER_HOUR = 5;
+export const MAX_EMAILS_PER_ADDRESS_PER_HOUR = 5;      // per purpose, so verify floods can't block resets
+export const MAX_VERIFY_PER_ACCOUNT_PER_HOUR = 3;
+// Protects the shared SMTP account (Gmail allows ~500 recipients/day) so alert emails keep flowing.
+export const MAX_ACCOUNT_EMAILS_PER_DAY = 200;
 
 export const EXPIRED_LINK_ERROR = "This link has expired or was already used.";
 
@@ -23,6 +26,17 @@ export function validateNewPassword(password: unknown): string | null {
   if (Buffer.byteLength(password, "utf8") > BCRYPT_MAX_BYTES) {
     return "Password is too long once encoded; please use fewer special characters.";
   }
+  return null;
+}
+
+/**
+ * Rule for NEW usernames. Usernames appear in emails sent from the site's address, so free text
+ * (spaces, URLs, markup) is not allowed. Existing usernames are unaffected at login.
+ */
+export function validateNewUsername(username: unknown): string | null {
+  if (typeof username !== "string") return "Username is required.";
+  if (username.length < 3 || username.length > 30) return "Username must be 3-30 characters";
+  if (!/^[A-Za-z0-9_.-]+$/.test(username)) return "Username may only contain letters, numbers, '.', '_' and '-'.";
   return null;
 }
 
@@ -55,7 +69,7 @@ export interface AccountStore {
    */
   issueToken(args: {
     userId: string; purpose: TokenPurpose; email: string; tokenHash: string; ttlMinutes: number;
-    maxPerAccountPerHour: number | null; maxPerAddressPerHour: number;
+    maxPerAccountPerHour: number | null; maxPerAddressPerHour: number; maxGlobalPerDay: number;
   }): Promise<boolean>;
   /** Claim a reset token and set the new password hash, bump session_version, invalidate the
    *  user's other reset tokens — all in one transaction. Null if expired/used/unknown. */
@@ -120,6 +134,7 @@ export function createAccountRecovery(deps: RecoveryDeps) {
         ttlMinutes: RESET_TTL_MINUTES,
         maxPerAccountPerHour: MAX_RESETS_PER_ACCOUNT_PER_HOUR,
         maxPerAddressPerHour: MAX_EMAILS_PER_ADDRESS_PER_HOUR,
+        maxGlobalPerDay: MAX_ACCOUNT_EMAILS_PER_DAY,
       });
       if (issued) await safeSend("reset", () => mailer.sendResetLink(t.email, t.username, link("reset", token)!));
     }
@@ -157,8 +172,8 @@ export function createAccountRecovery(deps: RecoveryDeps) {
     const token = newToken();
     const issued = await store.issueToken({
       userId, purpose: "verify_email", email, tokenHash: hashToken(token),
-      ttlMinutes: VERIFY_TTL_MINUTES, maxPerAccountPerHour: null,
-      maxPerAddressPerHour: MAX_EMAILS_PER_ADDRESS_PER_HOUR,
+      ttlMinutes: VERIFY_TTL_MINUTES, maxPerAccountPerHour: MAX_VERIFY_PER_ACCOUNT_PER_HOUR,
+      maxPerAddressPerHour: MAX_EMAILS_PER_ADDRESS_PER_HOUR, maxGlobalPerDay: MAX_ACCOUNT_EMAILS_PER_DAY,
     });
     if (issued) await safeSend("verify", () => mailer.sendVerifyLink(email, username, link("verify", token)!));
   }

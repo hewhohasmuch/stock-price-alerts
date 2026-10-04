@@ -75,10 +75,15 @@ export function createPgAccountStore(pool: pg.Pool): PgAccountStore {
             [a.userId, a.purpose]);
           if (rows[0].n >= a.maxPerAccountPerHour) return false;
         }
-        const { rows } = await c.query(
+        const perAddress = await c.query(
           `SELECT count(*)::int AS n FROM account_tokens
-           WHERE LOWER(email) = LOWER($1) AND created_at > now() - INTERVAL '1 hour'`, [a.email]);
-        if (rows[0].n >= a.maxPerAddressPerHour) return false;
+           WHERE LOWER(email) = LOWER($1) AND purpose = $2 AND created_at > now() - INTERVAL '1 hour'`,
+          [a.email, a.purpose]);
+        if (perAddress.rows[0].n >= a.maxPerAddressPerHour) return false;
+        // Not locked across users, so concurrent requests can overshoot by a few; it's a safety valve.
+        const global = await c.query(
+          `SELECT count(*)::int AS n FROM account_tokens WHERE created_at > now() - INTERVAL '24 hours'`);
+        if (global.rows[0].n >= a.maxGlobalPerDay) return false;
         await c.query(
           `UPDATE account_tokens SET used_at = now()
            WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL`, [a.userId, a.purpose]);
@@ -159,6 +164,7 @@ export function createPgAccountStore(pool: pg.Pool): PgAccountStore {
                 (SELECT t.email FROM account_tokens t
                   WHERE t.user_id = u.id AND t.purpose = 'verify_email'
                     AND t.used_at IS NULL AND t.expires_at > now()
+                    AND LOWER(t.email) <> LOWER(COALESCE(u.notification_email, ''))
                   ORDER BY t.created_at DESC LIMIT 1) AS "pendingEmail"
          FROM users u WHERE u.id = $1`, [userId]);
       return rows[0] ?? null;

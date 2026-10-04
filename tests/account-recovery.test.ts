@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import bcrypt from "bcryptjs";
 import {
-  createAccountRecovery, validateNewPassword, hashToken, isSessionCurrent, EXPIRED_LINK_ERROR,
+  createAccountRecovery, validateNewPassword, hashToken, isSessionCurrent, EXPIRED_LINK_ERROR, MAX_ACCOUNT_EMAILS_PER_DAY, validateNewUsername,
   type AccountStore, type Mailer, type TokenPurpose,
 } from "../src/services/account-recovery.js";
 
@@ -25,7 +25,8 @@ function makeStore(now: () => number) {
       const t = now();
       if (a.maxPerAccountPerHour != null &&
           tokens.filter(k => k.userId === a.userId && k.purpose === a.purpose && k.createdAt > t - HOUR).length >= a.maxPerAccountPerHour) return false;
-      if (tokens.filter(k => k.email.toLowerCase() === a.email.toLowerCase() && k.createdAt > t - HOUR).length >= a.maxPerAddressPerHour) return false;
+      if (a.maxGlobalPerDay != null && tokens.filter(k => k.createdAt > t - 24 * HOUR).length >= a.maxGlobalPerDay) return false;
+      if (tokens.filter(k => k.email.toLowerCase() === a.email.toLowerCase() && k.purpose === a.purpose && k.createdAt > t - HOUR).length >= a.maxPerAddressPerHour) return false;
       for (const k of tokens) if (k.userId === a.userId && k.purpose === a.purpose && k.usedAt == null) k.usedAt = t;
       tokens.push({ tokenHash: a.tokenHash, userId: a.userId, purpose: a.purpose, email: a.email,
         createdAt: t, expiresAt: t + a.ttlMinutes * 60_000, usedAt: null });
@@ -114,6 +115,18 @@ describe("validateNewPassword", () => {
   });
 });
 
+describe("validateNewUsername", () => {
+  it.each([
+    ["cmac", null], ["Jane.Doe_99", null], ["a-b", null],
+    ["ab", /3-30/], ["x".repeat(31), /3-30/],
+    ["has space", /letters, numbers/], ["visit http://spam.example", /letters, numbers/], ["<b>hi</b>", /letters, numbers/],
+    [42, /required/],
+  ])("%s", (name, expected) => {
+    const r = validateNewUsername(name);
+    if (expected === null) expect(r).toBeNull(); else expect(r).toMatch(expected as RegExp);
+  });
+});
+
 describe("requestReset", () => {
   it("emails a fragment link and stores only the token hash", async () => {
     await svc.requestReset("CMAC");
@@ -195,6 +208,26 @@ describe("requestReset", () => {
     await expect(s.requestReset("cmac")).resolves.toBeUndefined();
     expect(logs.join()).toMatch(/SMTP down/);
     expect(logs.join()).not.toMatch(/#reset=/);
+  });
+});
+
+describe("email volume limits", () => {
+  it("caps verification emails per account at 3 per hour", async () => {
+    for (let i = 0; i < 4; i++) await svc.requestEmailVerification("u1", `new${i}@example.com`);
+    expect(mail.sent.filter(m => m.kind === "verify")).toHaveLength(3);
+  });
+
+  it("stops all account emails once the global daily cap is reached", async () => {
+    for (let i = 0; i < MAX_ACCOUNT_EMAILS_PER_DAY; i++) {
+      await addUser(`g${i}`, `g${i}`, null, false);
+      await svc.requestEmailVerification(`g${i}`, `g${i}@example.com`);
+    }
+    expect(mail.sent).toHaveLength(MAX_ACCOUNT_EMAILS_PER_DAY);
+    await svc.requestReset("cmac");                       // a real reset is refused too
+    expect(mail.sent).toHaveLength(MAX_ACCOUNT_EMAILS_PER_DAY);
+    clock += 24 * 3600_000 + 1;
+    await svc.requestReset("cmac");
+    expect(mail.sent).toHaveLength(MAX_ACCOUNT_EMAILS_PER_DAY + 1);
   });
 });
 

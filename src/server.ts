@@ -21,7 +21,7 @@ import { config } from "./config.js";
 import { createSmtpMailer } from "./services/email-sender.js";
 import { createPgAccountStore } from "./services/account-store.js";
 import {
-  createAccountRecovery, isSessionCurrent, validateNewPassword,
+  createAccountRecovery, isSessionCurrent, validateNewPassword, validateNewUsername,
 } from "./services/account-recovery.js";
 
 declare module "express-session" {
@@ -167,8 +167,9 @@ app.post("/api/auth/register", requireJson, rateLimitAuth, async (req, res) => {
       res.status(400).json({ error: "username, email and password required" });
       return;
     }
-    if (username.length < 3 || username.length > 30) {
-      res.status(400).json({ error: "Username must be 3-30 characters" });
+    const usernameRule = validateNewUsername(username);
+    if (usernameRule) {
+      res.status(400).json({ error: usernameRule });
       return;
     }
     if (!EMAIL_RE.test(email)) {

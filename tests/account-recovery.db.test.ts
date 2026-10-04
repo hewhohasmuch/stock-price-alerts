@@ -136,6 +136,36 @@ describe.skipIf(!isLocal)("account recovery — database guarantees", async () =
     expect((await db.getEnabledAlerts()).find(a => a.userId === u.id)!.userEmail).toBe("unverified@example.test");
   });
 
+  it("keeps separate per-address budgets for verify and reset emails", async () => {
+    const id = await verifiedUser();
+    const { rows } = await pool.query(`SELECT username, notification_email FROM users WHERE id = $1`, [id]);
+    // Five other accounts flood this address with confirmation emails…
+    for (let i = 0; i < 5; i++) {
+      const other = await db.createUser(`zz_ar_${process.pid}_flood${++n}`, "old-password", rows[0].notification_email);
+      await svc.requestEmailVerification(other.id, rows[0].notification_email);
+    }
+    links.length = 0;
+    // …but the owner can still get a reset link.
+    await svc.requestReset(rows[0].username);
+    expect(links).toHaveLength(1);
+  });
+
+  it("enforces the global daily cap in the store", async () => {
+    const id = await verifiedUser();
+    const { rows } = await pool.query(`SELECT count(*)::int AS n FROM account_tokens WHERE created_at > now() - INTERVAL '24 hours'`);
+    const issued = await store.issueToken({
+      userId: id, purpose: "reset", email: "cap@example.test", tokenHash: hashToken("cap-" + id), ttlMinutes: 30,
+      maxPerAccountPerHour: 3, maxPerAddressPerHour: 5, maxGlobalPerDay: rows[0].n,
+    });
+    expect(issued).toBe(false);
+  });
+
+  it("does not report a new user's own unconfirmed address as a pending change", async () => {
+    const u = await db.createUser(`zz_ar_${process.pid}_newbie`, "old-password", "newbie@example.test");
+    await svc.requestEmailVerification(u.id, "newbie@example.test");
+    expect(await store.getAccountStatus(u.id)).toEqual({ emailVerified: false, pendingEmail: null });
+  });
+
   it("reports a pending email change", async () => {
     const id = await verifiedUser();
     await svc.requestEmailVerification(id, `pending_${id}@example.test`);
