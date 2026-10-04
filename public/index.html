@@ -219,7 +219,9 @@
     .md-tile.closed .md-arrow { opacity: 0.55; }
     .md-label { font-weight: 600; font-size: 13px; }
     .md-arrow { width: 36px; height: 36px; display: block; }
-    [data-theme="dark"] .md-arrow { filter: drop-shadow(0 0 1.5px rgba(255,255,255,0.7)); }
+    /* Dark theme: a light disc keeps dark red/green distinguishable on the dark surface. */
+    [data-theme="dark"] .md-arrow { background: rgba(255,255,255,0.9); border-radius: 50%; padding: 3px; }
+    [data-theme="dark"] .md-tile.closed .md-arrow { opacity: 0.8; }
     .md-dash { font-size: 24px; line-height: 36px; color: var(--text-faint); }
     .md-dist, .md-asof { font-size: 12px; color: var(--text-secondary); }
     .md-badge {
@@ -894,7 +896,11 @@
 
     function renderMarketStrip(md) {
       const closed = md.marketState === "closed";
-      document.getElementById("marketStrip").innerHTML = md.indexes.map((r, i) => {
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+      const strip = document.getElementById("marketStrip");
+      // innerHTML replaces the buttons; remember keyboard focus so a refresh doesn't drop it.
+      const focusIdx = [...strip.children].indexOf(document.activeElement);
+      strip.innerHTML = md.indexes.map((r, i) => {
         const ok = r.status === "ok";
         const arrow = ok
           ? `<svg class="md-arrow" viewBox="0 0 24 24" aria-hidden="true"
@@ -904,7 +910,8 @@
         const dist = ok
           ? `${r.distancePct >= 0 ? "+" : ""}${r.distancePct.toFixed(2)}% vs. baseline`
           : (MD_REASON[r.reason] || "Unavailable");
-        const asOf = r.asOf ? (closed ? "Closed · " : "as of ") + mdTime(r.asOf, closed) : "";
+        const withDate = closed || r.sessionDate !== today;
+        const asOf = r.asOf ? (closed ? "Closed · " : "as of ") + mdTime(r.asOf, withDate) : "";
         const badges = [
           r.dataQuality !== "ok" ? MD_BADGE[r.dataQuality] : null,
           r.staleFromError ? "Last good reading" : null,
@@ -924,6 +931,7 @@
           <span class="md-pop" id="mdPop${i}" role="tooltip">${details}${esc(MD_EXPLAIN)}</span>
         </button>`;
       }).join("");
+      if (focusIdx >= 0) strip.children[focusIdx]?.focus({ preventScroll: true });
     }
 
     function toggleMdPop(i) {
