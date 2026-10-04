@@ -60,6 +60,7 @@ The alerts table also carries the Shortlist bookkeeping as dedicated scalar colu
 - New passwords: 15–64 chars and ≤72 UTF-8 bytes (bcrypt limit), checked by `validateNewPassword()` for register, reset and change; login accepts older shorter passwords.
 - Email is the recovery credential, so it must be verified: `users.email_verified_at` (rows that existed at migration were grandfathered). Alert emails and reset links only go to verified addresses; an email change stays pending (old address active) until the new one is confirmed.
 - One-time tokens in `account_tokens` (sha256 only; reset 30 min, verify 24 h); links use the URL fragment (`APP_URL/#reset=…`, `#verify=…`) so tokens never reach server logs. Lock order is always `users` row then token rows — keep it that way or concurrent resets deadlock.
+- Email volume limits (in `issueToken`, so throttled requests rotate nothing and send nothing): 3 reset and 3 verify emails per account per hour, 5 per address per hour *per purpose* (verify floods can't block resets), and a global cap of 200 account emails per 24 h to protect the shared Gmail SMTP quota used by alerts. New usernames must match `[A-Za-z0-9_.-]{3,30}` because they appear in emails.
 - Revocation: `users.session_version` is bumped on reset/change; `requireAuth` rejects sessions whose `sv` differs (missing `sv` = 0).
 - `APP_URL` must be set per Vercel environment (Production: https://wekintech.com). `DEV_LOG_EMAIL_LINKS=1` prints account emails to the console in local dev only.
 
