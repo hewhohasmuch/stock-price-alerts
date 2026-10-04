@@ -197,13 +197,6 @@ export async function findUserByUsername(username: string): Promise<User | null>
   return { ...rows[0], createdAt: rows[0].createdAt.toISOString() };
 }
 
-export async function updateUserNotificationEmail(userId: string, email: string): Promise<void> {
-  await pool.query(
-    `UPDATE users SET notification_email = $1 WHERE id = $2`,
-    [email, userId],
-  );
-}
-
 // ── Alert functions ─────────────────────────────────────────────────────
 
 function rowToAlert(row: any): StockAlert {
