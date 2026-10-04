@@ -208,24 +208,23 @@
     /* ── Mobile responsive ──────────────────────────────────────────── */
     /* ── Market direction strip ── */
     .md-strip {
-      position: relative; display: grid; gap: 8px; margin: 12px auto 0; width: 100%;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      position: relative; display: grid; gap: 6px; margin: 12px auto 0; width: 100%;
+      grid-template-columns: repeat(4, minmax(0, 1fr));   /* always one row */
     }
     .md-tile {
       display: flex; flex-direction: column; align-items: center; gap: 2px;
       background: var(--surface); color: var(--text); border: 1px solid var(--border);
-      border-radius: 8px; padding: 8px 6px; font: inherit; text-align: center; cursor: pointer;
+      border-radius: 8px; padding: 6px 4px; font: inherit; text-align: center; cursor: pointer; min-width: 0;
     }
     .md-tile.closed .md-arrow { opacity: 0.55; }
-    .md-label { font-weight: 600; font-size: 13px; }
-    .md-arrow { width: 36px; height: 36px; display: block; }
+    .md-label { font-weight: 600; font-size: 13px; line-height: 1.2; overflow-wrap: anywhere; }
+    .md-arrow { width: 32px; height: 32px; display: block; }
     /* Dark theme: a light disc keeps dark red/green distinguishable on the dark surface. */
     [data-theme="dark"] .md-arrow { background: rgba(255,255,255,0.9); border-radius: 50%; padding: 3px; }
     [data-theme="dark"] .md-tile.closed .md-arrow { opacity: 0.8; }
-    .md-dash { font-size: 24px; line-height: 36px; color: var(--text-faint); }
-    .md-dist, .md-asof { font-size: 12px; color: var(--text-secondary); }
+    .md-dash { font-size: 24px; line-height: 32px; color: var(--text-faint); }
     .md-badge {
-      font-size: 11px; padding: 1px 6px; border-radius: 10px;
+      font-size: 10px; padding: 1px 5px; border-radius: 10px;
       background: var(--badge-off-bg); color: var(--badge-off-color);
     }
     .md-pop {
@@ -914,21 +913,23 @@
         const asOf = r.asOf ? (closed ? "Closed · " : "as of ") + mdTime(r.asOf, withDate) : "";
         const badges = [
           r.dataQuality !== "ok" ? MD_BADGE[r.dataQuality] : null,
-          r.staleFromError ? "Last good reading" : null,
+          r.staleFromError ? "Stale" : null,
         ].filter(Boolean).map(b => `<span class="md-badge">${esc(b)}</span>`).join("");
+        // The tile shows only the name and arrow; everything else lives in the popover.
+        const summary = `<strong>${esc(r.label)}</strong> · ${esc(dist)}<br>` +
+          (asOf ? `${esc(asOf)}<br>` : "") +
+          (r.staleFromError ? "Latest update failed; showing the last good reading.<br>" : "");
         const details = ok
           ? `Baseline ${r.baseline.toFixed(2)} · price ${r.price.toFixed(2)}<br>` +
             `On the same side ${r.sameSidePct.toFixed(0)}% of the last ${Math.min(r.minute, 90)} min<br>` +
             `Score ${r.score.toFixed(2)} · data coverage ${(r.coverage * 100).toFixed(0)}%<br>`
           : "";
-        const label = `${r.label}: ${ok ? `score ${r.score.toFixed(2)}, ${dist}` : dist}`;
+        const label = `${r.label}: ${ok ? `score ${r.score.toFixed(2)}, ${dist}` : dist}${asOf ? `, ${asOf}` : ""}`;
         return `<button type="button" class="md-tile${closed ? " closed" : ""}"
             aria-label="${esc(label)}" aria-describedby="mdPop${i}"
             aria-expanded="${i === mdOpenIndex}" onclick="toggleMdPop(${i})">
-          <span class="md-label">${esc(r.label)}</span>${arrow}
-          <span class="md-dist">${esc(dist)}</span>
-          <span class="md-asof">${esc(asOf)}</span>${badges}
-          <span class="md-pop" id="mdPop${i}" role="tooltip">${details}${esc(MD_EXPLAIN)}</span>
+          <span class="md-label">${esc(r.label)}</span>${arrow}${badges}
+          <span class="md-pop" id="mdPop${i}" role="tooltip">${summary}${details}${esc(MD_EXPLAIN)}</span>
         </button>`;
       }).join("");
       if (focusIdx >= 0) strip.children[focusIdx]?.focus({ preventScroll: true });

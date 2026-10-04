@@ -18,7 +18,7 @@ export const INDEXES: IndexConfig[] = [
   { symbol: "^GSPC", label: "S&P 500",      fullScale: 0.005,  lagThresholdSec: 300 },
   { symbol: "^DJI",  label: "Dow",          fullScale: 0.0045, lagThresholdSec: 300 },
   { symbol: "^IXIC", label: "Nasdaq",       fullScale: 0.0065, lagThresholdSec: 300 },
-  { symbol: "^RUT",  label: "Russell 2000", fullScale: 0.009,  lagThresholdSec: 300 },
+  { symbol: "^RUT",  label: "Russell 2K",   fullScale: 0.009,  lagThresholdSec: 300 },
 ];
 
 export interface ChartBars {
