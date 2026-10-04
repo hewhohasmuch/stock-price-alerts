@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm run build      # tsc --noEmit — type-check src/ and api/, no output
-npm test           # vitest run tests/alert-evaluator.test.ts (the default suite; there is no CI or pre-commit hook)
+npm test           # vitest run — alert-evaluator + account-recovery suites (the default suite; there is no CI or pre-commit hook)
 npm run test:all   # vitest run — all test files, see caveat below
+npm run test:db    # opt-in DB guarantees for account recovery; needs TEST_DATABASE_URL (localhost only)
 npm run cli -- <cmd>   # run the CLI (tsx src/cli.ts)
 npm run web         # run the Express dashboard locally (tsx src/server.ts), http://localhost:3000
 npm start           # run the standalone scheduler loop (tsx src/scheduler.ts) — local/dev only, not used in production
@@ -53,7 +54,14 @@ The alerts table also carries the Shortlist bookkeeping as dedicated scalar colu
 
 ### Auth & sessions
 
-`express-session` backed by Postgres (`connect-pg-simple`, same pool). `SESSION_SECRET` is required in production (throws at startup if missing) and falls back to a random per-process UUID otherwise. Simple username/password auth (`bcryptjs`), no external auth provider. IP-based rate limiting for `/api/auth/*` (10 attempts / 15 min) is implemented in Postgres (`login_attempts` table), not in-memory — works correctly across serverless invocations.
+`express-session` backed by Postgres (`connect-pg-simple`, same pool). `SESSION_SECRET` is required in production (throws at startup if missing) and falls back to a random per-process UUID otherwise. Username/password auth (`bcryptjs`, cost 10), no external provider. IP-based rate limiting for `/api/auth/*` and account settings (10 attempts / 15 min) lives in Postgres (`login_attempts`).
+
+**Account recovery** (`src/services/account-recovery.ts` = pure logic with injected store/mailer; `src/services/account-store.ts` = Postgres transactions):
+- New passwords: 15–64 chars and ≤72 UTF-8 bytes (bcrypt limit), checked by `validateNewPassword()` for register, reset and change; login accepts older shorter passwords.
+- Email is the recovery credential, so it must be verified: `users.email_verified_at` (rows that existed at migration were grandfathered). Alert emails and reset links only go to verified addresses; an email change stays pending (old address active) until the new one is confirmed.
+- One-time tokens in `account_tokens` (sha256 only; reset 30 min, verify 24 h); links use the URL fragment (`APP_URL/#reset=…`, `#verify=…`) so tokens never reach server logs. Lock order is always `users` row then token rows — keep it that way or concurrent resets deadlock.
+- Revocation: `users.session_version` is bumped on reset/change; `requireAuth` rejects sessions whose `sv` differs (missing `sv` = 0).
+- `APP_URL` must be set per Vercel environment (Production: https://wekintech.com). `DEV_LOG_EMAIL_LINKS=1` prints account emails to the console in local dev only.
 
 ### Frontend
 
@@ -68,3 +76,4 @@ The dashboard has two tabs (`showWatchlistTab()`/`showShortlistTab()`):
 Env vars are read once into `src/config.ts` (loaded via `dotenv/config`). Notification channels are independently optional — checked via `isEmailConfigured()`/`isSmsConfigured()`; a missing channel is skipped, not an error. See `.env.example` for the full list. Notable ones not obvious from naming:
 - `CRON_SECRET` — shared secret sent as `x-cron-secret` to authenticate `GET /api/cron`; not in `.env.example`. Must match in three places: Vercel env vars (marked Sensitive, so it can't be read back — rotate rather than copy, and redeploy after changing it), the GitHub Actions secret, and the cron-job.org job's header.
 - `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` — only used for the market-open check, not price data (Yahoo Finance is unauthenticated and used for all actual quotes).
+- `APP_URL` — trusted base URL for password-reset and email-verification links (never derived from request headers); without it, those emails are not sent. Set per Vercel environment.
