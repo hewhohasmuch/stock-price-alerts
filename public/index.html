@@ -755,11 +755,14 @@
       dashboard.classList.remove("hidden");
       headerRight.classList.remove("hidden");
       headerUser.textContent = currentUser ? currentUser.username : "";
-      const needsEmail = currentUser && !currentUser.notificationEmail;
-      const needsVerify = currentUser && currentUser.notificationEmail && !currentUser.emailVerified;
+      // An address waiting for confirmation (new, or replacing none) means "confirm", not "add".
+      const awaiting = currentUser && (currentUser.pendingEmail ||
+        (currentUser.notificationEmail && !currentUser.emailVerified ? currentUser.notificationEmail : null));
+      const needsEmail = currentUser && !currentUser.notificationEmail && !awaiting;
+      const needsVerify = !!awaiting && !currentUser.emailVerified;
       document.getElementById("emailModalTitle").textContent = needsVerify ? "Confirm Your Email" : "Email Required";
       document.getElementById("emailModalText").textContent = needsVerify
-        ? "Check " + currentUser.notificationEmail + " for a confirmation link. Alerts and password resets wait until you confirm it."
+        ? "Check " + awaiting + " for a confirmation link. Alerts and password resets wait until you confirm it."
         : "An email address is needed for sending alerts to your inbox!";
       noEmailModal.classList.toggle("hidden", !(needsEmail || needsVerify));
       hideAddForm();
@@ -788,6 +791,8 @@
         document.getElementById("editEmailBtn").classList.remove("hidden");
         document.getElementById("settingsBtn").classList.add("hidden");
       } else {
+        // No email yet: the field is already editable, so ask for the password right away.
+        document.getElementById("emailPasswordGroup").classList.remove("hidden");
         document.getElementById("settingsEmail").readOnly = false;
         document.getElementById("editEmailBtn").classList.add("hidden");
         document.getElementById("settingsBtn").classList.remove("hidden");
