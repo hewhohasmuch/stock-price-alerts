@@ -129,6 +129,25 @@ describe("computeDirection — data hygiene", () => {
     expect(r.reason).toBe("insufficient-data");
   });
 
+  it("ignores a long gap too old to affect any baseline in the window", () => {
+    // Window at n = 300 is minutes 211..300; its baselines reach back to minute 122.
+    const closes: (number | null)[] = Array(300).fill(P);
+    for (let i = 0; i < 6; i++) closes[i] = null;                    // minutes 1–6 missing (late open)
+    closes[50] = closes[51] = closes[52] = closes[53] = null;        // minutes 51–54 missing
+    const r = computeDirection(input(closes));
+    expect(r.status).toBe("ok");
+    expect(r.coverage).toBe(1);
+  });
+
+  it("still rejects a long gap that feeds a baseline in the window", () => {
+    // Minutes 130–133 lie within n − 179 = 121, so they feed B_i for i in the window.
+    const closes: (number | null)[] = Array(300).fill(P);
+    closes[129] = closes[130] = closes[131] = closes[132] = null;
+    const r = computeDirection(input(closes));
+    expect(r.status).toBe("unavailable");
+    expect(r.reason).toBe("insufficient-data");
+  });
+
   it("window coverage under 90% makes the reading unavailable", () => {
     const closes: (number | null)[] = linearRise(120);
     for (const start of [39, 49, 59, 69]) closes[start] = closes[start + 1] = closes[start + 2] = null;

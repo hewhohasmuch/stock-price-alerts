@@ -91,6 +91,8 @@ export function computeDirection(input: DirectionInput): Reading {
   }
 
   const n = Math.max(...bars.keys());
+  // B_i for i in the window reads c back to minute n − 178; older gaps can't affect the reading.
+  const relevantFrom = n - 2 * WINDOW_MINUTES + 2;
 
   // Filled series c[1..n]; real[k] marks provider bars.
   const c = new Array<number>(n + 1);
@@ -105,7 +107,7 @@ export function computeDirection(input: DirectionInput): Reading {
       run = 0;
     } else {
       run++;
-      if (run > MAX_FILL_MINUTES) {
+      if (run > MAX_FILL_MINUTES && k >= relevantFrom) {
         return unavailable("insufficient-data", { ...session, minute: n });
       }
       c[k] = prev;
