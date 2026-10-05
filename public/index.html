@@ -229,9 +229,10 @@
     .md-tile.closed .md-arrow { opacity: 0.55; }
     .md-label { font-weight: 600; font-size: 13px; line-height: 1.2; overflow-wrap: anywhere; }
     .md-arrow { width: 32px; height: 32px; display: block; }
-    /* Dark theme: a light disc keeps dark red/green distinguishable on the dark surface. */
-    [data-theme="dark"] .md-arrow { background: rgba(255,255,255,0.9); border-radius: 50%; padding: 3px; }
-    [data-theme="dark"] .md-tile.closed .md-arrow { opacity: 0.8; }
+    .md-arrow path { stroke-linejoin: round; }
+    /* Dark theme: no backdrop; a thin light outline keeps dark red/green readable on navy. */
+    [data-theme="dark"] .md-arrow path { stroke: rgba(255,255,255,0.85); stroke-width: 1.5; paint-order: stroke; }
+    [data-theme="dark"] .md-tile.closed .md-arrow { opacity: 0.85; }
     .md-dash { font-size: 24px; line-height: 32px; color: var(--text-faint); }
     .md-badge {
       font-size: 10px; padding: 1px 5px; border-radius: 10px;
@@ -1166,7 +1167,7 @@
         const arrow = ok
           ? `<svg class="md-arrow" viewBox="0 0 24 24" aria-hidden="true"
                style="transform:rotate(${(-r.score * 90).toFixed(1)}deg);color:${mdColor(r.score)}">
-               <path d="M3 10.5h12V6l7 6-7 6v-4.5H3z" fill="currentColor"/></svg>`
+               <path d="M2.5 9.5h10.5V4l9 8-9 8v-5.5H2.5z" fill="currentColor"/></svg>`
           : `<span class="md-dash" aria-hidden="true">–</span>`;
         const dist = ok
           ? `${r.distancePct >= 0 ? "+" : ""}${r.distancePct.toFixed(2)}% vs. baseline`
