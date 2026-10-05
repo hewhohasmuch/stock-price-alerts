@@ -137,3 +137,16 @@ New auth and settings mutations require `Content-Type: application/json` (415 ot
   - `email_verified_at` grandfathering stays correct after re-running `initDb()`
 - **Manual:** local server with `DEV_LOG_EMAIL_LINKS=1`, two browsers (one is logged out by a reset or change, the other keeps its session); then the Vercel preview with `APP_URL` set for Preview.
 - **Docs:** `.env.example` (`APP_URL`, `DEV_LOG_EMAIL_LINKS`), and CLAUDE.md (auth section, new table and columns, endpoints, the verified-email rule for alerts).
+
+## Changes since this spec (shipped in PR #28)
+
+The final code review led to these additions; CLAUDE.md describes the current behavior.
+
+- **Email volume limits:**
+  - at most 3 verification emails per account per hour (as well as 3 reset emails)
+  - per-address limits are counted per purpose, so a flood of verification emails cannot block someone's resets
+  - a global cap of 200 account emails per 24 hours protects the shared SMTP quota that alert emails also use
+- **Username rule.** New usernames must match `[A-Za-z0-9_.-]{3,30}`, because usernames appear inside emails sent from the site's address. Existing usernames are unaffected.
+- **Users without an email.** Settings shows the current-password field immediately for accounts that have no email yet, so they can add one. Once an address is pending, the dashboard prompt asks them to confirm it rather than to add one.
+- **Status line.** A new user's own unconfirmed sign-up address is not reported as a "pending change".
+- **Test safety.** `npm run test:db` refuses any database whose name does not contain "test".

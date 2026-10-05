@@ -2,9 +2,13 @@
 
 CLI tool and web dashboard that monitors stock prices and sends email/SMS alerts when prices cross user-defined thresholds.
 
+The web dashboard (live at https://wekintech.com) also has:
+- **Market direction arrows** for the S&P 500, Dow, Nasdaq and Russell 2000, based on the last ~90 minutes of trading. Tap a card for details.
+- **Accounts with recovery**: sign-up with email confirmation, "Forgot password?" via an emailed one-time link, and password/email changes in Settings.
+
 ## Prerequisites
 
-- [Node.js](https://nodejs.org) 18+
+- [Node.js](https://nodejs.org) 20+
 - [Git](https://git-scm.com)
 
 ## Setup
@@ -45,34 +49,41 @@ Copy `.env.example` to `.env` and fill in your credentials:
 
 | Variable | Description |
 |---|---|
-| `NOTIFY_EMAIL` | Email address to receive alerts |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | SMTP server settings |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `SESSION_SECRET` | Secret for signing login sessions (required in production) |
+| `APP_URL` | Public base URL used in password-reset and email-confirmation links, e.g. `https://wekintech.com`. Without it those emails aren't sent |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | SMTP server settings (alert emails and account emails) |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | Twilio SMS settings |
 | `NOTIFY_SMS` | Phone number to receive SMS alerts |
-| `CHECK_INTERVAL_CRON` | Cron expression for check frequency (default: `*/5 * * * *`) |
-| `COOLDOWN_MINUTES` | Minutes between repeated notifications (default: `60`) |
+| `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` | Used only to check whether the market is open (without them it's treated as closed) |
+| `CHECK_INTERVAL_CRON` | Cron expression for the local scheduler (default: `*/5 * * * *`) |
+| `DEV_LOG_EMAIL_LINKS` | Local development only: set to `1` to print account emails to the console instead of sending them |
 
-Email and SMS are independent — configure either or both.
+Alert emails go to each user's own confirmed email address (set at sign-up or in Settings), not to a fixed address. Email and SMS are independent — configure either or both.
 
 ## Usage
 
 ### CLI
 
+Every command acts as a user, given with `-u <username>`:
+
 ```bash
 # Add alerts
-npm run cli -- add AAPL --above 200
-npm run cli -- add TSLA --below 150 --above 300
+npm run cli -- -u alice add AAPL --above 200
+npm run cli -- -u alice add TSLA --below 150 --above 300
 
 # List all alerts
-npm run cli -- list
+npm run cli -- -u alice list
 
 # Enable / disable an alert
-npm run cli -- enable <id>
-npm run cli -- disable <id>
+npm run cli -- -u alice enable <id>
+npm run cli -- -u alice disable <id>
 
 # Remove an alert
-npm run cli -- remove <id>
+npm run cli -- -u alice remove <id>
 ```
+
+Create accounts through the web dashboard. It enforces the email and password rules; the CLI's `register` command doesn't yet.
 
 ### Web Dashboard
 
