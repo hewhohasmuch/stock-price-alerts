@@ -216,6 +216,37 @@
     .dash-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 
     /* ── Mobile responsive ──────────────────────────────────────────── */
+    /* ── Market direction strip ── */
+    .md-strip {
+      position: relative; display: grid; gap: 6px; margin: 12px auto 0; width: 100%;
+      grid-template-columns: repeat(4, minmax(0, 1fr));   /* always one row */
+    }
+    .md-tile {
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      background: var(--surface); color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 6px 4px; font: inherit; text-align: center; cursor: pointer; min-width: 0;
+    }
+    .md-tile.closed .md-arrow { opacity: 0.55; }
+    .md-label { font-weight: 600; font-size: 13px; line-height: 1.2; overflow-wrap: anywhere; }
+    .md-arrow { width: 32px; height: 32px; display: block; }
+    /* Dark theme: a light disc keeps dark red/green distinguishable on the dark surface. */
+    [data-theme="dark"] .md-arrow { background: rgba(255,255,255,0.9); border-radius: 50%; padding: 3px; }
+    [data-theme="dark"] .md-tile.closed .md-arrow { opacity: 0.8; }
+    .md-dash { font-size: 24px; line-height: 32px; color: var(--text-faint); }
+    .md-badge {
+      font-size: 10px; padding: 1px 5px; border-radius: 10px;
+      background: var(--badge-off-bg); color: var(--badge-off-color);
+    }
+    .md-pop {
+      display: none; position: absolute; left: 16px; right: 16px; top: 100%; z-index: 20;
+      margin-top: 6px; padding: 8px 10px; text-align: left; font-size: 12px; line-height: 1.5;
+      background: var(--surface); color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; box-shadow: 0 2px 8px var(--card-shadow);
+    }
+    .md-tile:hover .md-pop, .md-tile:focus-visible .md-pop,
+    .md-tile[aria-expanded="true"] .md-pop { display: block; }
+    .md-strip-msg { grid-column: 1 / -1; font-size: 12px; color: var(--text-muted); }
+
     @media (max-width: 640px) {
       header { padding: 6px 16px 6px 8px; }
       .header-logo { height: 48px; }
@@ -397,6 +428,7 @@
 
   <!-- Dashboard (shown after login) -->
   <div id="dashboard" class="hidden">
+    <div id="marketStrip" class="md-strip container" aria-label="Market direction"></div>
     <div class="tab-bar container" style="margin:12px auto 0;">
       <button type="button" class="tab-btn active" id="tabWatchlistBtn" onclick="showWatchlistTab()">Watchlist <span id="watchlistCount">(0)</span></button>
       <button type="button" class="tab-btn" id="tabShortlistBtn" onclick="showShortlistTab()">Shortlist <span id="shortlistCount">(0)</span></button>
@@ -768,6 +800,7 @@
       hideAddForm();
       showWatchlistTab();
       loadAlerts();
+      loadMarketDirection();
     }
 
     function showSettings() {
@@ -1093,6 +1126,99 @@
       const d = document.createElement("div");
       d.textContent = str;
       return d.innerHTML;
+    }
+
+    // ── Market direction strip ────────────────────────────────────────────
+    const MD_STOPS = [[-1, "#8B0000"], [-1 / 3, "#E67E00"], [1 / 3, "#D4A800"], [1, "#006400"]];
+    const MD_BADGE = { delayed: "Delayed", incomplete: "Incomplete", unavailable: "Unavailable" };
+    const MD_REASON = {
+      "pre-first-bar": "Waiting for first minute",
+      "insufficient-data": "Not enough data",
+      "fetch-failed": "Data source unavailable",
+      "invalid-input": "Bad data from source",
+    };
+    const MD_EXPLAIN = "Up means price is above its recent 90-minute baseline and has mostly stayed there. " +
+      "It can still point up during a short pullback.";
+    let mdOpenIndex = -1;
+
+    function mdColor(s) {
+      let i = 0;
+      while (i < MD_STOPS.length - 2 && s > MD_STOPS[i + 1][0]) i++;
+      const [a, colA] = MD_STOPS[i], [b, colB] = MD_STOPS[i + 1];
+      const p = Math.min(1, Math.max(0, (s - a) / (b - a)));
+      return `color-mix(in oklab, ${colB} ${(p * 100).toFixed(1)}%, ${colA})`;
+    }
+
+    function mdTime(sec, withDate) {
+      const opts = { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" };
+      if (withDate) Object.assign(opts, { weekday: "short", month: "short", day: "numeric" });
+      return new Date(sec * 1000).toLocaleString("en-US", opts) + " ET";
+    }
+
+    function renderMarketStrip(md) {
+      const closed = md.marketState === "closed";
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+      const strip = document.getElementById("marketStrip");
+      // innerHTML replaces the buttons; remember keyboard focus so a refresh doesn't drop it.
+      const focusIdx = [...strip.children].indexOf(document.activeElement);
+      strip.innerHTML = md.indexes.map((r, i) => {
+        const ok = r.status === "ok";
+        const arrow = ok
+          ? `<svg class="md-arrow" viewBox="0 0 24 24" aria-hidden="true"
+               style="transform:rotate(${(-r.score * 90).toFixed(1)}deg);color:${mdColor(r.score)}">
+               <path d="M3 10.5h12V6l7 6-7 6v-4.5H3z" fill="currentColor"/></svg>`
+          : `<span class="md-dash" aria-hidden="true">–</span>`;
+        const dist = ok
+          ? `${r.distancePct >= 0 ? "+" : ""}${r.distancePct.toFixed(2)}% vs. baseline`
+          : (MD_REASON[r.reason] || "Unavailable");
+        const withDate = closed || r.sessionDate !== today;
+        const asOf = r.asOf ? (closed ? "Closed · " : "as of ") + mdTime(r.asOf, withDate) : "";
+        const badges = [
+          r.dataQuality !== "ok" ? MD_BADGE[r.dataQuality] : null,
+          r.staleFromError ? "Stale" : null,
+        ].filter(Boolean).map(b => `<span class="md-badge">${esc(b)}</span>`).join("");
+        // The tile shows only the name and arrow; everything else lives in the popover.
+        const summary = `<strong>${esc(r.label)}</strong> · ${esc(dist)}<br>` +
+          (asOf ? `${esc(asOf)}<br>` : "") +
+          (r.staleFromError ? "Latest update failed; showing the last good reading.<br>" : "");
+        const details = ok
+          ? `Baseline ${r.baseline.toFixed(2)} · price ${r.price.toFixed(2)}<br>` +
+            `On the same side ${r.sameSidePct.toFixed(0)}% of the last ${Math.min(r.minute, 90)} min<br>` +
+            `Score ${r.score.toFixed(2)} · data coverage ${(r.coverage * 100).toFixed(0)}%<br>`
+          : "";
+        const label = `${r.label}: ${ok ? `score ${r.score.toFixed(2)}, ${dist}` : dist}${asOf ? `, ${asOf}` : ""}`;
+        return `<button type="button" class="md-tile${closed ? " closed" : ""}"
+            aria-label="${esc(label)}" aria-describedby="mdPop${i}"
+            aria-expanded="${i === mdOpenIndex}" onclick="toggleMdPop(${i})">
+          <span class="md-label">${esc(r.label)}</span>${arrow}${badges}
+          <span class="md-pop" id="mdPop${i}" role="tooltip">${summary}${details}${esc(MD_EXPLAIN)}</span>
+        </button>`;
+      }).join("");
+      if (focusIdx >= 0) strip.children[focusIdx]?.focus({ preventScroll: true });
+    }
+
+    function toggleMdPop(i) {
+      mdOpenIndex = mdOpenIndex === i ? -1 : i;
+      document.querySelectorAll(".md-tile").forEach((b, j) =>
+        b.setAttribute("aria-expanded", String(j === mdOpenIndex)));
+    }
+
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape" && mdOpenIndex !== -1) toggleMdPop(mdOpenIndex);
+    });
+
+    async function loadMarketDirection() {
+      const strip = document.getElementById("marketStrip");
+      try {
+        const res = await fetch("/api/market-direction");
+        if (!res.ok) throw new Error(String(res.status));
+        renderMarketStrip(await res.json());
+      } catch {
+        // Keep a populated strip (its "as of" times stay honest); only fill an empty one.
+        if (!strip.children.length) {
+          strip.innerHTML = `<div class="md-strip-msg">Market direction unavailable</div>`;
+        }
+      }
     }
 
     function editNotes(span, id) {
@@ -1536,6 +1662,7 @@
     setInterval(() => {
       if (!dashboard.classList.contains("hidden")) {
         loadPrices();
+        loadMarketDirection();
       }
     }, 60_000);
   </script>

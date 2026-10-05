@@ -1,0 +1,236 @@
+import { describe, it, expect, vi } from "vitest";
+import {
+  createMarketDirectionService, fetchIndexBars, type ChartBars, type IndexConfig,
+} from "../src/services/market-direction-service.js";
+
+// Fri 2026-10-02, 9:30–16:00 ET.
+const START = Date.UTC(2026, 9, 2, 13, 30) / 1000;
+const END = START + 390 * 60;
+
+const INDEXES: IndexConfig[] = [
+  { symbol: "A", label: "Alpha", fullScale: 0.005, lagThresholdSec: 300 },
+  { symbol: "B", label: "Bravo", fullScale: 0.005, lagThresholdSec: 300 },
+  { symbol: "C", label: "Charlie", fullScale: 0.005, lagThresholdSec: 300 },
+  { symbol: "D", label: "Delta", fullScale: 0.005, lagThresholdSec: 300 },
+];
+
+/** `minutes` bars rising +0.01%/min from a prior close of 100. */
+function bars(minutes: number): ChartBars {
+  return {
+    timestamps: Array.from({ length: minutes }, (_, i) => START + i * 60),
+    closes: Array.from({ length: minutes }, (_, i) => 100 * (1 + 0.0001 * (i + 1))),
+    priorClose: 100,
+    sessionStart: START,
+    sessionEnd: END,
+  };
+}
+
+function setup(opts: {
+  fetchBars?: (s: string) => Promise<ChartBars>;
+  open?: boolean;
+  nowSec?: number;
+} = {}) {
+  let t = opts.nowSec ?? START + 120 * 60;
+  const fetchBars = vi.fn(opts.fetchBars ?? (async () => bars(120)));
+  const service = createMarketDirectionService({
+    fetchBars,
+    isMarketOpen: async () => opts.open ?? true,
+    now: () => t,
+    indexes: INDEXES,
+  });
+  return { service, fetchBars, advance: (sec: number) => { t += sec; } };
+}
+
+describe("market direction service", () => {
+  it("returns one ok reading per index during an open session", async () => {
+    const { service } = setup();
+    const md = await service.get();
+    expect(md.marketState).toBe("open");
+    expect(md.indexes.map(r => r.symbol)).toEqual(["A", "B", "C", "D"]);
+    expect(md.indexes.every(r => r.status === "ok" && r.dataQuality === "ok")).toBe(true);
+  });
+
+  it("one failing symbol leaves the other three usable", async () => {
+    const { service } = setup({
+      fetchBars: async (s) => { if (s === "C") throw new Error("boom"); return bars(120); },
+    });
+    const md = await service.get();
+    const c = md.indexes.find(r => r.symbol === "C")!;
+    expect(c.status).toBe("unavailable");
+    expect(c.reason).toBe("fetch-failed");
+    expect(c.dataQuality).toBe("unavailable");
+    expect(c.score).toBeNull();
+    expect(md.indexes.filter(r => r.status === "ok")).toHaveLength(3);
+  });
+
+  it("simultaneous calls share one fetch batch", async () => {
+    const { service, fetchBars } = setup();
+    const [a, b] = await Promise.all([service.get(), service.get()]);
+    expect(a).toBe(b);
+    expect(fetchBars).toHaveBeenCalledTimes(4);
+  });
+
+  it("serves the cache for 60 s, then refetches", async () => {
+    const { service, fetchBars, advance } = setup();
+    await service.get();
+    advance(59);
+    await service.get();
+    expect(fetchBars).toHaveBeenCalledTimes(4);
+    advance(2);
+    await service.get();
+    expect(fetchBars).toHaveBeenCalledTimes(8);
+  });
+
+  it("keeps the last good reading, flagged, when a later fetch fails", async () => {
+    let fail = false;
+    const { service, advance } = setup({
+      fetchBars: async (s) => { if (fail && s === "A") throw new Error("down"); return bars(120); },
+    });
+    const first = (await service.get()).indexes[0];
+    fail = true;
+    advance(61);
+    const second = (await service.get()).indexes[0];
+    expect(second.staleFromError).toBe(true);
+    expect(second.status).toBe("ok");
+    expect(second.score).toBe(first.score);
+    expect(second.asOf).toBe(first.asOf);
+  });
+
+  it("marks a reading delayed when its bars lag beyond the threshold while open", async () => {
+    // Bars end at minute 100, but it is minute 110 → 600 s behind (> 300).
+    const { service } = setup({ fetchBars: async () => bars(100), nowSec: START + 110 * 60 });
+    const md = await service.get();
+    expect(md.marketState).toBe("open");
+    expect(md.indexes[0].dataQuality).toBe("delayed");
+  });
+
+  it("flags an earlier session as delayed when the clock says the market is open", async () => {
+    // Mon 10:00 ET, Alpaca says open, but Yahoo still serves Friday: a provider outage.
+    const { service } = setup({ open: true, nowSec: Date.UTC(2026, 9, 5, 14) / 1000 });
+    const md = await service.get();
+    expect(md.marketState).toBe("closed");
+    expect(md.indexes[0].sessionDate).toBe("2026-10-02");
+    expect(md.indexes[0].dataQuality).toBe("delayed");
+  });
+
+  it("does not flag an earlier session when the clock says closed", async () => {
+    const { service } = setup({ open: false, nowSec: Date.UTC(2026, 9, 5, 14) / 1000 });
+    expect((await service.get()).indexes[0].dataQuality).toBe("ok");
+  });
+
+  it("drops a last good reading from an earlier session once others report a newer one", async () => {
+    const MON = Date.UTC(2026, 9, 5, 13, 30) / 1000;
+    const monday: ChartBars = { ...bars(0), timestamps: [MON], closes: [101], sessionStart: MON, sessionEnd: MON + 390 * 60 };
+    let day: "fri" | "mon" = "fri";
+    const { service, advance } = setup({
+      nowSec: END + 600,
+      open: false,
+      fetchBars: async (s) => {
+        if (day === "fri") return bars(390);
+        if (s === "A") throw new Error("down");
+        return monday;
+      },
+    });
+    await service.get();                       // Friday readings cached as last good
+    day = "mon";
+    advance(MON + 120 - (END + 600));          // Mon 9:32 ET
+    const a = (await service.get()).indexes[0];
+    expect(a.status).toBe("unavailable");
+    expect(a.reason).toBe("fetch-failed");
+  });
+
+  it("still uses the last good reading when no fresher session is known", async () => {
+    let fail = false;
+    const { service, advance } = setup({
+      nowSec: END + 600,
+      open: false,
+      fetchBars: async () => { if (fail) throw new Error("down"); return bars(390); },
+    });
+    await service.get();
+    fail = true;
+    advance(3600);
+    const a = (await service.get()).indexes[0];
+    expect(a.status).toBe("ok");
+    expect(a.staleFromError).toBe(true);
+  });
+
+  it("shows Unavailable, not a neutral arrow, when open but no bars have arrived", async () => {
+    const { service } = setup({ fetchBars: async () => bars(0), nowSec: START + 120 });
+    const r = (await service.get()).indexes[0];
+    expect(r.status).toBe("unavailable");
+    expect(r.reason).toBe("pre-first-bar");
+    expect(r.score).toBeNull();
+    expect(r.dataQuality).toBe("unavailable");
+  });
+
+  it("reports incomplete coverage while closed", async () => {
+    const b = bars(390);
+    b.closes[350] = null;                     // minute 351, inside the last 90
+    const { service } = setup({ fetchBars: async () => b, open: false, nowSec: END + 600 });
+    const md = await service.get();
+    expect(md.marketState).toBe("closed");
+    expect(md.indexes[0].dataQuality).toBe("incomplete");
+  });
+});
+
+describe("fetchIndexBars", () => {
+  const body = {
+    chart: { result: [{
+      meta: {
+        chartPreviousClose: 7666.45,
+        currentTradingPeriod: { regular: { start: START, end: END } },
+      },
+      timestamp: [START, START + 60],
+      indicators: { quote: [{ close: [7670.1, null] }] },
+    }] },
+  };
+
+  it("parses bars, prior close and session bounds", async () => {
+    const fetchImpl = vi.fn(async (_url: string) => new Response(JSON.stringify(body), { status: 200 }));
+    const b = await fetchIndexBars("^GSPC", { fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(b).toEqual({
+      timestamps: [START, START + 60], closes: [7670.1, null],
+      priorClose: 7666.45, sessionStart: START, sessionEnd: END,
+    });
+    expect(String(fetchImpl.mock.calls[0][0])).toContain("%5EGSPC?interval=1m&range=1d");
+  });
+
+  it("falls back to the bars' own session when Yahoo has already rolled to the next day", async () => {
+    // Pre-open Monday: `regular` says Mon 10/5, but the bars are still Friday's.
+    const monStart = Date.UTC(2026, 9, 5, 13, 30) / 1000;
+    const rolled = structuredClone(body);
+    rolled.chart.result[0].meta.currentTradingPeriod.regular = { start: monStart, end: monStart + 390 * 60 };
+    const fetchImpl = async () => new Response(JSON.stringify(rolled));
+    const b = await fetchIndexBars("^GSPC", { fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(b.sessionStart).toBe(START);   // Fri 9:30 ET
+    expect(b.sessionEnd).toBe(END);       // Fri 16:00 ET
+  });
+
+  it("throws when timestamps and closes have different lengths", async () => {
+    const bad = structuredClone(body);
+    bad.chart.result[0].indicators.quote[0].close = [7670.1];
+    const fetchImpl = async () => new Response(JSON.stringify(bad));
+    await expect(fetchIndexBars("^GSPC", { fetchImpl: fetchImpl as unknown as typeof fetch }))
+      .rejects.toThrow("mismatched");
+  });
+
+  it("throws on a non-OK status", async () => {
+    const fetchImpl = async () => new Response("nope", { status: 429 });
+    await expect(fetchIndexBars("^RUT", { fetchImpl: fetchImpl as unknown as typeof fetch }))
+      .rejects.toThrow("429");
+  });
+
+  it("throws when session data is missing", async () => {
+    const fetchImpl = async () => new Response(JSON.stringify({ chart: { result: [{ meta: {} }] } }));
+    await expect(fetchIndexBars("^DJI", { fetchImpl: fetchImpl as unknown as typeof fetch }))
+      .rejects.toThrow("missing session data");
+  });
+
+  it("aborts a request that exceeds the timeout", async () => {
+    const hang = (_url: string, init: RequestInit) => new Promise<Response>((_, reject) => {
+      init.signal!.addEventListener("abort", () => reject(init.signal!.reason));
+    });
+    await expect(fetchIndexBars("^IXIC", { timeoutMs: 20, fetchImpl: hang as unknown as typeof fetch }))
+      .rejects.toThrow();
+  });
+});

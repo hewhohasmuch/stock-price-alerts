@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit",
-    "test": "vitest run tests/alert-evaluator.test.ts tests/account-recovery.test.ts",
+    "test": "vitest run tests/alert-evaluator.test.ts tests/market-direction.test.ts tests/market-direction-service.test.ts tests/market-hours.test.ts tests/account-recovery.test.ts",
     "test:all": "vitest run",
     "test:db": "vitest run tests/account-recovery.db.test.ts",
     "start": "tsx src/scheduler.ts",
