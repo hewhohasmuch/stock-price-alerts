@@ -6,8 +6,9 @@ This file provides guidance to Codex and other coding agents when working with c
 
 ```bash
 npm run build      # tsc --noEmit — type-check src/ and api/, no output
-npm test           # vitest run tests/alert-evaluator.test.ts (the default suite; there is no CI or pre-commit hook)
+npm test           # vitest run — alert-evaluator, market-direction, market-hours and account-recovery suites (the default suite; there is no CI or pre-commit hook)
 npm run test:all   # vitest run — all test files, see caveat below
+npm run test:db    # opt-in DB guarantees for account recovery; needs TEST_DATABASE_URL (localhost only)
 npm run cli -- <cmd>   # run the CLI (tsx src/cli.ts)
 npm run web         # run the Express dashboard locally (tsx src/server.ts), http://localhost:3000
 npm start           # run the standalone scheduler loop (tsx src/scheduler.ts) — local/dev only, not used in production
@@ -29,8 +30,8 @@ This is a single Node/TypeScript backend with three entry points sharing one ser
 
 ### Data flow of a price check (`checkPrices()` in `src/scheduler.ts`)
 
-1. `isMarketOpen()` (`src/utils/market-hours.ts`) gates the whole check. If `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` aren't set, the market is assumed **closed** (fails safe, not open). If they are set, it queries the Alpaca clock API and falls back to a hardcoded NYSE-hours calculation only when Alpaca returns an error or is unreachable.
-2. `getEnabledAlerts()` (`src/db.ts`) loads all enabled alerts across all users, joined with each user's notification email.
+1. `isMarketOpen()` (`src/utils/market-hours.ts`) gates the whole check. If `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` aren't set, the market is assumed **closed** (fails safe, not open) and the warning is logged once per process. If they are set, it queries the Alpaca clock API (5 s timeout) and falls back to a hardcoded NYSE-hours calculation only when Alpaca errors, times out or is unreachable. The fallback knows weekdays and clock times only — not holidays or early closes.
+2. `getEnabledAlerts()` (`src/db.ts`) loads all enabled alerts across all users, joined with each user's notification email — **only if that email is verified** (`email_verified_at` set); otherwise `userEmail` is null and that user gets no alert email (SMS still sends).
 3. `fetchPrices()` (`src/services/price-fetcher.ts`) pulls quotes from Yahoo Finance's undocumented chart API, sequentially per symbol (avoids rate limiting), with a 30s in-memory cache keyed by the sorted symbol set.
 4. `evaluateAlerts()` (`src/services/alert-evaluator.ts`) dispatches each alert to a per-`alertType` evaluator (strategy pattern — see below) and returns both triggered alerts and any evaluator-mutated `state` that needs persisting (e.g. a ratcheted trailing high).
 5. `notify()` (`src/services/notifier.ts`) sends email (`nodemailer`) and/or SMS (`twilio`) for each triggered alert, independently — one channel failing doesn't block the other — and records `lastNotifiedAt`/`lastTriggeredAt` only for channels that actually succeeded.
@@ -45,6 +46,24 @@ This is a single Node/TypeScript backend with three entry points sharing one ser
 
 Adding a new alert type means: extend `AlertType`/`AlertParams` in `src/types.ts`, add an `AlertEvaluator` to the `evaluators` map, and add validation in `validateAlertParams()` in `src/server.ts`.
 
+### Market direction strip (`src/services/market-direction*.ts`)
+
+The dashboard shows one arrow for each of `^GSPC ^DJI ^IXIC ^RUT`, served by `GET /api/market-direction` (requires login). It's independent of alerts and the scheduler, and stores nothing in the database.
+
+- **`market-direction.ts`** is the pure scoring. It takes Yahoo 1-minute bars (`interval=1m&range=1d`) and:
+  - keeps completed regular-session bars only (Yahoo's `currentTradingPeriod.regular`, which excludes the 16:00 print)
+  - fills up to 3 consecutive missing minutes and needs ≥90% coverage in the window
+  - uses a 90-minute baseline, with the prior close filling the pre-open part of the window
+  - scores `s = clamp(distance/fullScale) × f`, where f is the share of window minutes on the current side of their own baseline
+- **`market-direction-service.ts`** handles I/O:
+  - fetches symbols one at a time with an 8s timeout each
+  - uses a shared in-flight promise and a 60s cache
+  - isolates failures per symbol, keeping the last good reading (lost on a serverless cold start)
+  - sets `marketState` and `dataQuality` as separate fields
+
+  `marketState` is open only if `isMarketOpen()` is true **and** the bars are from today's session. That guards against the `isNyseHours()` fallback in `src/utils/market-hours.ts`, which ignores holidays and early closes.
+- Per-index `fullScale` and `lagThresholdSec` live in `INDEXES`. They're still initial defaults (300s lag) until calibrated from a live weekday session — Task 6 of `docs/superpowers/plans/2026-10-04-market-direction-arrows.md`; see also the spec `docs/superpowers/specs/2026-10-04-market-direction-arrows-design.md`.
+
 ### Database (`src/db.ts`)
 
 Single Postgres pool (`pg`), schema created/migrated idempotently on startup via `initDb()` (`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF NOT EXISTS` — there is no separate migrations directory/tool). `src/server.ts` calls `initDb()` lazily on first request (serverless-safe) rather than at module load. Typed-alert params/state are stored as `JSONB` columns (`params_json`, `state_json`); legacy alerts use dedicated `above_price`/`below_price` columns. Prefers `DATABASE_URL_UNPOOLED` over `DATABASE_URL` (Neon's pooled connection blocks startup params).
@@ -53,7 +72,15 @@ The alerts table also carries the Shortlist bookkeeping as dedicated scalar colu
 
 ### Auth & sessions
 
-`express-session` backed by Postgres (`connect-pg-simple`, same pool). `SESSION_SECRET` is required in production (throws at startup if missing) and falls back to a random per-process UUID otherwise. Simple username/password auth (`bcryptjs`), no external auth provider. IP-based rate limiting for `/api/auth/*` (10 attempts / 15 min) is implemented in Postgres (`login_attempts` table), not in-memory — works correctly across serverless invocations.
+`express-session` backed by Postgres (`connect-pg-simple`, same pool). `SESSION_SECRET` is required in production (throws at startup if missing) and falls back to a random per-process UUID otherwise. Username/password auth (`bcryptjs`, cost 10), no external provider. IP-based rate limiting for `/api/auth/*` and account settings (10 attempts / 15 min) lives in Postgres (`login_attempts`).
+
+**Account recovery** (`src/services/account-recovery.ts` = pure logic with injected store/mailer; `src/services/account-store.ts` = Postgres transactions):
+- New passwords: 15–64 chars and ≤72 UTF-8 bytes (bcrypt limit), checked by `validateNewPassword()` for register, reset and change; login accepts older shorter passwords.
+- Email is the recovery credential, so it must be verified: `users.email_verified_at` (rows that existed at migration were grandfathered). Alert emails and reset links only go to verified addresses; an email change stays pending (old address active) until the new one is confirmed.
+- One-time tokens in `account_tokens` (sha256 only; reset 30 min, verify 24 h); links use the URL fragment (`APP_URL/#reset=…`, `#verify=…`) so tokens never reach server logs. Lock order is always `users` row then token rows — keep it that way or concurrent resets deadlock.
+- Email volume limits (in `issueToken`, so throttled requests rotate nothing and send nothing): 3 reset and 3 verify emails per account per hour, 5 per address per hour *per purpose* (verify floods can't block resets), and a global cap of 200 account emails per 24 h to protect the shared Gmail SMTP quota used by alerts. New usernames must match `[A-Za-z0-9_.-]{3,30}` because they appear in emails.
+- Revocation: `users.session_version` is bumped on reset/change; `requireAuth` rejects sessions whose `sv` differs (missing `sv` = 0).
+- `APP_URL` must be set per Vercel environment (Production: https://wekintech.com). `DEV_LOG_EMAIL_LINKS=1` prints account emails to the console in local dev only.
 
 ### Frontend
 
@@ -63,8 +90,11 @@ The dashboard has two tabs (`showWatchlistTab()`/`showShortlistTab()`):
 - **Watchlist** — the "Add Alert" form + the alerts table (the original view).
 - **Shortlist** — a table (Ticker/Price/Shares/Total/Stage) of alerts the user has starred via the bookmark toggle on each Watchlist row. It's a **derived client-side view**: `renderShortlistTable()` filters the same `allAlerts` array loaded by `loadAlerts()` for `shortlisted === true` (sorted by symbol) — no separate fetch. Price reuses the existing `.price-cell`/`loadPrices()` mechanism; Total (`Price × Shares`) and the staged-only subtotal (`recomputeShortlistTotals()`) are computed client-side and never persisted. Mutations follow the app's fire-`PATCH`-then-`loadAlerts()` convention, which re-renders both tabs and keeps them in sync.
 
+A market-direction strip (`#marketStrip`, `loadMarketDirection()`) sits above the tab buttons and refreshes in the same 60s interval as prices. It is always one row of four tiles (`repeat(4, minmax(0, 1fr))`, labels S&P 500 / Dow / Nasdaq / Russell 2K from `INDEXES`); each tile shows only the label, the arrow and a warning badge when data quality isn't ok (Delayed / Incomplete / Unavailable / Stale). Everything else (% vs. baseline, as-of/Closed time, baseline, same-side %, score, coverage) is in a popover toggled by tapping/clicking the tile (`toggleMdPop()`, `aria-expanded`; Escape closes). Hover-to-preview only applies under `@media (hover: hover) and (pointer: fine)` — touch browsers leave a tapped tile in `:hover`, which would stop a second tap from closing it. Arrow angle = `score × 90°`; color = `color-mix(in oklab, …)` between four stops (`mdColor()`); in dark theme the arrow path gets a thin light outline (no backdrop) so dark red/green stay visible.
+
 ## Configuration
 
 Env vars are read once into `src/config.ts` (loaded via `dotenv/config`). Notification channels are independently optional — checked via `isEmailConfigured()`/`isSmsConfigured()`; a missing channel is skipped, not an error. See `.env.example` for the full list. Notable ones not obvious from naming:
 - `CRON_SECRET` — shared secret sent as `x-cron-secret` to authenticate `GET /api/cron`; not in `.env.example`. Must match in three places: Vercel env vars (marked Sensitive, so it can't be read back — rotate rather than copy, and redeploy after changing it), the GitHub Actions secret, and the cron-job.org job's header.
 - `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` — only used for the market-open check, not price data (Yahoo Finance is unauthenticated and used for all actual quotes).
+- `APP_URL` — trusted base URL for password-reset and email-verification links (never derived from request headers); without it, those emails are not sent. Set per Vercel environment.

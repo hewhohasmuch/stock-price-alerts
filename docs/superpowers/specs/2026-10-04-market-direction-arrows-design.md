@@ -203,3 +203,19 @@ Market state and data quality are **separate fields**, and any combination is al
 - **Cap weighting.** The S&P 500 and Nasdaq are dominated by their largest members, and the Dow is weighted by share price; none of them reflects a particular portfolio.
 - **Time of day.** Readings at the open and at midday aren't directly comparable, because of volatility and volume differences.
 - **Provider risk.** Yahoo's endpoint is undocumented. Delays and failures are shown as such, never hidden behind a neutral arrow.
+
+## Changes since this spec (shipped in PRs #27, #29, #30)
+
+This document records the original design. What shipped differs in these ways; CLAUDE.md describes the current behavior.
+
+- **Compact tiles.** The strip is always one row of four tiles. Each tile shows only the label, the arrow and a warning badge; "% vs. baseline", the as-of/Closed time and the score details moved into the tap/click popover. The Russell 2000 label is "Russell 2K", and the "last good reading" badge is "Stale".
+- **Popover behaviour.** Tap or click a tile to open it, and tap the same tile again to close it. Hover-to-preview only applies with a real mouse (`@media (hover: hover) and (pointer: fine)`), because touch browsers keep a tapped tile in `:hover`.
+- **Dark theme.** There is no backdrop behind the arrow. The arrow is a heavier shape, and in dark theme it has a thin light outline.
+- **Gap rule.** A gap longer than 3 minutes only makes a reading unavailable if it is recent enough to affect the scored window (minute ≥ n − 178). The spec said "anywhere in the session".
+- **Pre-open.** If Yahoo's `currentTradingPeriod` has already rolled to the next day while the bars are still the previous day's, the session is anchored to the bars' own date.
+- **Staleness and failures:**
+  - A last good reading from an older session than freshly fetched data is dropped.
+  - A reading from an earlier session is marked Delayed when the Alpaca clock says the market is open.
+  - A Yahoo response whose timestamp and close arrays differ in length is treated as a fetch failure.
+  - The Alpaca clock check times out after 5 s, and its missing-keys warning is logged once per process.
+- **Still open.** Live calibration of `lagThresholdSec` and `fullScale` (Task 6 of the plan) has not run yet.
