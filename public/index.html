@@ -153,6 +153,43 @@
     .empty { text-align: center; color: var(--text-faint); padding: 32px 0; }
     .mono { font-family: monospace; font-size: 12px; color: var(--text-muted); }
 
+    /* Card header with a view toggle (Alerts | Analyst Targets, Plan | Analyst Targets) */
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .card-head h2 { margin-bottom: 0; }
+    .view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+    .vt-btn {
+      background: var(--surface); color: var(--text-muted); border-radius: 0;
+      padding: 5px 12px; font-size: 13px; font-weight: 600;
+    }
+    .vt-btn + .vt-btn { border-left: 1px solid var(--border); }
+    .vt-btn:hover { opacity: 1; color: var(--text); }
+    .vt-btn[aria-selected="true"] { background: var(--primary); color: #fff; }
+    .vt-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+    /* Analyst Targets view — neutral colours only: nothing here is a buy/sell signal */
+    .targets-table td { vertical-align: middle; }
+    .tr-range { min-width: 140px; }
+    .tr-bar { display: flex; align-items: center; gap: 3px; height: 14px; }
+    .tr-out { font-size: 10px; color: var(--text-muted); width: 8px; text-align: center; flex: none; }
+    .tr-track { position: relative; flex: 1; height: 6px; border-radius: 3px; background: var(--border); }
+    .tr-mid { position: absolute; top: -3px; width: 2px; height: 12px; margin-left: -1px; background: var(--text-secondary); }
+    .tr-dot {
+      position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%;
+      background: var(--primary); border: 2px solid var(--surface);
+    }
+    .tr-nums {
+      display: flex; justify-content: space-between; gap: 6px;
+      font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; white-space: nowrap;
+    }
+    .tr-count { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+    .tr-badge {
+      display: inline-block; margin-left: 4px; padding: 0 5px; border: 1px solid var(--border);
+      border-radius: 8px; font-size: 10px; color: var(--text-secondary); white-space: nowrap;
+    }
+    .tr-status-sub { display: block; font-size: 11px; color: var(--text-muted); }
+    .tr-msg { color: var(--text-muted); font-size: 13px; }
+    .targets-foot { font-size: 11px; color: var(--text-muted); margin-top: 10px; line-height: 1.5; }
+
     .breach-dot {
       display: inline-block; margin-left: 5px; cursor: pointer; vertical-align: middle;
       line-height: 1; opacity: 0.85;
@@ -324,6 +361,25 @@
       }
       #shortlistView td:before { display: none; }
       #shortlistView .shortlist-total-row td { border-bottom: none; }
+
+      /* Analyst Targets tables keep a real table on mobile too (both tabs) */
+      .targets-table { display: table; }
+      .targets-table thead { display: table-header-group; }
+      .targets-table tbody { display: table-row-group; }
+      .targets-table tr {
+        display: table-row; background: none; border: none; border-left: none;
+        border-radius: 0; padding: 0; margin: 0;
+      }
+      .targets-table tr::before { display: none; }
+      .targets-table th { display: table-cell; padding: 8px 4px; }
+      .targets-table td {
+        display: table-cell; width: auto; order: 0;
+        border-bottom: 1px solid var(--border-lighter); padding: 8px 4px; font-size: 12px;
+      }
+      .targets-table td:before { display: none; }
+      .tr-range { min-width: 110px; }
+      .card-head { margin-bottom: 10px; }
+      .vt-btn { padding: 4px 10px; font-size: 12px; }
 
       /* Force line break after first row */
       tr::before { content: ''; order: 4; flex-basis: 100%; height: 0; }
@@ -508,8 +564,21 @@
     <div class="dash-scroll">
     <div class="container" style="margin-top:0;">
     <div class="card">
-      <h2>Alerts</h2>
-      <table>
+      <div class="card-head">
+        <h2>Alerts</h2>
+        <div class="view-toggle" role="tablist" aria-label="Watchlist view" data-tab="watchlist">
+          <button type="button" role="tab" class="vt-btn" data-mode="alerts" aria-controls="alertsTable" onclick="setView('watchlist', 'alerts')">Alerts</button>
+          <button type="button" role="tab" class="vt-btn" data-mode="targets" aria-controls="watchlistTargets" onclick="setView('watchlist', 'targets')">Analyst Targets</button>
+        </div>
+      </div>
+      <div id="watchlistTargets" class="hidden" role="tabpanel" aria-label="Analyst targets for watchlist tickers">
+        <table class="targets-table">
+          <thead><tr><th>Ticker</th><th>Price</th><th>Analyst range</th><th>Status</th></tr></thead>
+          <tbody id="watchlistTargetsBody"></tbody>
+        </table>
+        <p class="targets-foot" id="watchlistTargetsFoot"></p>
+      </div>
+      <table id="alertsTable" role="tabpanel">
         <thead>
           <tr>
             <th class="sortable" onclick="setSort('symbol')">Ticker<span class="sort-arrow" id="sort-symbol"></span></th>
@@ -535,8 +604,21 @@
     <div id="shortlistView" class="hidden dash-scroll">
     <div class="container" style="margin-top:12px;">
     <div class="card">
-      <h2>Shortlist</h2>
-      <table>
+      <div class="card-head">
+        <h2>Shortlist</h2>
+        <div class="view-toggle" role="tablist" aria-label="Shortlist view" data-tab="shortlist">
+          <button type="button" role="tab" class="vt-btn" data-mode="plan" aria-controls="shortlistPlanTable" onclick="setView('shortlist', 'plan')">Plan</button>
+          <button type="button" role="tab" class="vt-btn" data-mode="targets" aria-controls="shortlistTargets" onclick="setView('shortlist', 'targets')">Analyst Targets</button>
+        </div>
+      </div>
+      <div id="shortlistTargets" class="hidden" role="tabpanel" aria-label="Analyst targets for shortlisted tickers">
+        <table class="targets-table">
+          <thead><tr><th>Ticker</th><th>Price</th><th>Analyst range</th><th>Status</th></tr></thead>
+          <tbody id="shortlistTargetsBody"></tbody>
+        </table>
+        <p class="targets-foot" id="shortlistTargetsFoot"></p>
+      </div>
+      <table id="shortlistPlanTable" role="tabpanel">
         <thead>
           <tr>
             <th>Ticker</th>
@@ -785,6 +867,7 @@
       noEmailModal.classList.add("hidden");
       headerRight.classList.add("hidden");
       currentUser = null;
+      resetAnalystTargets();   // don't carry one user's ticker data into the next session
     }
 
     function showDashboard() {
@@ -1417,6 +1500,7 @@
         `).join("");
         }
         renderShortlistTable();
+        refreshTargetsView();
         if (!skipPrices) loadPrices();
       } catch {
         alertsBody.innerHTML = '<tr><td colspan="10" class="empty">Failed to load alerts.</td></tr>';
@@ -1502,6 +1586,7 @@
       document.getElementById("shortlistView").classList.add("hidden");
       document.getElementById("tabWatchlistBtn").classList.add("active");
       document.getElementById("tabShortlistBtn").classList.remove("active");
+      refreshTargetsView();
     }
 
     function showShortlistTab() {
@@ -1509,7 +1594,229 @@
       document.getElementById("shortlistView").classList.remove("hidden");
       document.getElementById("tabWatchlistBtn").classList.remove("active");
       document.getElementById("tabShortlistBtn").classList.add("active");
+      refreshTargetsView();
     }
+
+    // ── Analyst Targets views (Watchlist + Shortlist toggles) ─────────────
+    // Analysts' 12-month price targets vs. the live quote, from GET /api/analyst-targets.
+    // Opinions, not intrinsic value: labels stay factual and colours neutral. Each row is
+    // rendered entirely from the server's response (one price snapshot), never from priceCache.
+
+    const MAX_TARGET_SYMBOLS = 60;   // server cap per request; larger lists are chunked
+    const TARGET_VIEWS = {
+      watchlist: {
+        storageKey: "view.watchlist", primary: "alerts", primaryEl: "alertsTable",
+        panel: "watchlistTargets", body: "watchlistTargetsBody", foot: "watchlistTargetsFoot",
+        tabView: "watchlistView", empty: "No alerts yet. Add one above.",
+        symbols: () => [...new Set(allAlerts.map(a => a.symbol))].sort(),
+      },
+      shortlist: {
+        storageKey: "view.shortlist", primary: "plan", primaryEl: "shortlistPlanTable",
+        panel: "shortlistTargets", body: "shortlistTargetsBody", foot: "shortlistTargetsFoot",
+        tabView: "shortlistView", empty: "No shortlisted tickers yet. Tap the list icon on a Watchlist row to add one.",
+        symbols: () => [...new Set(allAlerts.filter(a => a.shortlisted).map(a => a.symbol))].sort(),
+      },
+    };
+
+    const viewMode = {};
+    for (const [tab, cfg] of Object.entries(TARGET_VIEWS)) {
+      let saved = null;
+      try { saved = localStorage.getItem(cfg.storageKey); } catch {}
+      viewMode[tab] = saved === "targets" ? "targets" : cfg.primary;
+    }
+
+    let targetsData = {};          // symbol -> row from /api/analyst-targets
+    let targetsFailed = false;     // last request failed outright (network/500)
+    let targetsPending = false;
+    let targetsQueued = false;
+    let targetsGen = 0;            // bumped on logout so a late response is dropped
+    const targetsLoadedKey = { watchlist: "", shortlist: "" };
+
+    function resetAnalystTargets() {
+      targetsData = {};
+      targetsFailed = false;
+      targetsGen++;
+      targetsLoadedKey.watchlist = targetsLoadedKey.shortlist = "";
+    }
+
+    function applyViews() {
+      for (const [tab, cfg] of Object.entries(TARGET_VIEWS)) {
+        const targets = viewMode[tab] === "targets";
+        document.getElementById(cfg.primaryEl).classList.toggle("hidden", targets);
+        document.getElementById(cfg.panel).classList.toggle("hidden", !targets);
+        document.querySelectorAll(`.view-toggle[data-tab="${tab}"] .vt-btn`).forEach(btn => {
+          const selected = btn.dataset.mode === viewMode[tab];
+          btn.setAttribute("aria-selected", String(selected));
+          btn.tabIndex = selected ? 0 : -1;   // roving tabindex: arrow keys move between the two
+        });
+      }
+    }
+
+    function setView(tab, mode) {
+      viewMode[tab] = mode;
+      try { localStorage.setItem(TARGET_VIEWS[tab].storageKey, mode); } catch {}
+      applyViews();
+      refreshTargetsView();
+    }
+
+    // Arrow keys switch views inside a toggle (WAI-ARIA tabs pattern).
+    document.querySelectorAll(".view-toggle").forEach(group => {
+      group.addEventListener("keydown", e => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+        e.preventDefault();
+        const btns = [...group.querySelectorAll(".vt-btn")];
+        const i = btns.indexOf(document.activeElement);
+        const next = e.key === "Home" ? 0 : e.key === "End" ? btns.length - 1
+          : (i + (e.key === "ArrowRight" ? 1 : btns.length - 1)) % btns.length;
+        btns[next].focus();
+        setView(group.dataset.tab, btns[next].dataset.mode);
+      });
+    });
+
+    /** The tab currently on screen, if it's showing Analyst Targets. */
+    function visibleTargetsTab() {
+      if (dashboard.classList.contains("hidden")) return null;
+      for (const [tab, cfg] of Object.entries(TARGET_VIEWS)) {
+        if (!document.getElementById(cfg.tabView).classList.contains("hidden") && viewMode[tab] === "targets") return tab;
+      }
+      return null;
+    }
+
+    /** Re-render the visible targets view; fetch only if its ticker set changed. */
+    function refreshTargetsView() {
+      const tab = visibleTargetsTab();
+      if (!tab) return;
+      renderTargets(tab);
+      if (TARGET_VIEWS[tab].symbols().join(",") !== targetsLoadedKey[tab]) loadAnalystTargets();
+    }
+
+    async function loadAnalystTargets() {
+      const tab = visibleTargetsTab();
+      if (!tab) return;
+      if (targetsPending) { targetsQueued = true; return; }   // never overlap; re-run once afterwards
+      const symbols = TARGET_VIEWS[tab].symbols();
+      targetsLoadedKey[tab] = symbols.join(",");
+      if (symbols.length === 0) { renderTargets(tab); return; }
+
+      targetsPending = true;
+      const gen = targetsGen;
+      let failed = false;
+      try {
+        for (let i = 0; i < symbols.length; i += MAX_TARGET_SYMBOLS) {
+          const chunk = symbols.slice(i, i + MAX_TARGET_SYMBOLS);
+          const res = await fetch(`/api/analyst-targets?symbols=${encodeURIComponent(chunk.join(","))}`);
+          if (res.status === 401) { showAuth(); return; }
+          if (gen !== targetsGen) return;
+          if (!res.ok) { failed = true; continue; }
+          const data = await res.json();
+          if (gen !== targetsGen) return;
+          Object.assign(targetsData, data);
+        }
+      } catch {
+        failed = true;
+      } finally {
+        targetsPending = false;
+        if (gen === targetsGen) {
+          targetsFailed = failed;
+          const visible = visibleTargetsTab();
+          if (visible) renderTargets(visible);
+        }
+        if (targetsQueued) { targetsQueued = false; refreshTargetsView(); }
+      }
+    }
+
+    const fmtUsd = v => "$" + Number(v).toFixed(2);
+    // Compact target figures: whole-dollar targets drop the cents ($14, not $14.00); $100+ always rounds to whole dollars.
+    const fmtTarget = v => "$" + (v >= 100 ? Math.round(v) : Number(v).toFixed(2).replace(/\.00$/, ""));
+
+    // The "middle" target is the median (one outlier analyst can't drag it around); the server
+    // falls back to the mean when Yahoo gives no median, and `basis` says which one the row uses.
+    const midOf = r => (r.basis === "median" ? r.median : r.mean);
+    const midWord = r => (r.basis === "median" ? "median" : "average");
+    // Show the average as a note only when it's this far from the median — i.e. when one or two
+    // analysts are skewing it. Display-only; nothing is classified against it.
+    const AVG_NOTE_GAP = 0.10;
+    const showAvgNote = r => r.basis === "median" && r.median > 0 && Math.abs(r.mean - r.median) / r.median >= AVG_NOTE_GAP;
+
+    function targetStatusText(r) {
+      const pct = Math.abs(r.pct * 100).toFixed(1);
+      const word = midWord(r);
+      const vsMid = `${r.pct < 0 ? "−" : "+"}${pct}% vs. ${word} target`;
+      switch (r.status) {
+        case "below-low":  return { label: "Below lowest target", sub: vsMid };
+        case "above-high": return { label: "Above highest target", sub: vsMid };
+        case "at-mid":     return { label: `At ${word} target`, sub: "" };
+        case "below-mid":  return { label: `${pct}% below ${word} target`, sub: "" };
+        case "above-mid":  return { label: `${pct}% above ${word} target`, sub: "" };
+        default:           return { label: "", sub: "" };
+      }
+    }
+
+    function targetRangeHtml(r) {
+      const span = r.high - r.low;
+      const pos = v => (span > 0 ? Math.min(100, Math.max(0, ((v - r.low) / span) * 100)) : 50);
+      const hasPrice = r.state === "ok" && r.price != null;
+      const below = hasPrice && r.price < r.low;
+      const above = hasPrice && r.price > r.high;
+      const dotLeft = !hasPrice ? null : span > 0 ? pos(r.price) : (below ? 0 : above ? 100 : 50);
+      const mid = midOf(r);
+      const midLabel = r.basis === "median"
+        ? `median ${fmtUsd(r.median)}, average ${fmtUsd(r.mean)}`
+        : `average ${fmtUsd(r.mean)}`;
+      const label = `${hasPrice ? `Price ${fmtUsd(r.price)}; ` : ""}analyst targets: low ${fmtUsd(r.low)}, `
+        + `${midLabel}, high ${fmtUsd(r.high)}, ${r.count} analyst${r.count === 1 ? "" : "s"}`;
+      return `
+        <div class="tr-bar" role="img" aria-label="${esc(label)}">
+          <span class="tr-out" aria-hidden="true">${below ? "◂" : ""}</span>
+          <div class="tr-track">
+            <span class="tr-mid" style="left:${pos(mid)}%"></span>
+            ${dotLeft == null ? "" : `<span class="tr-dot" style="left:${dotLeft}%"></span>`}
+          </div>
+          <span class="tr-out" aria-hidden="true">${above ? "▸" : ""}</span>
+        </div>
+        <div class="tr-nums" aria-hidden="true"><span>${fmtTarget(r.low)}</span><span>${fmtTarget(mid)}</span><span>${fmtTarget(r.high)}</span></div>
+        <div class="tr-count" aria-hidden="true">(${r.count} analyst${r.count === 1 ? "" : "s"})${showAvgNote(r) ? ` · avg ${fmtTarget(r.mean)}` : ""}${r.count < 3 ? '<span class="tr-badge">Few analysts</span>' : ""}</div>`;
+    }
+
+    function targetRowHtml(sym, r) {
+      const ticker = `<td><strong>${esc(sym)}</strong></td>`;
+      const price = `<td>${r && r.price != null ? fmtUsd(r.price) : "—"}</td>`;
+      const msg = text => `${ticker}${price}<td colspan="2"><span class="tr-msg">${text}</span></td>`;
+      if (!r) return `<tr>${msg(targetsFailed ? "Temporarily unavailable" : "Loading…")}</tr>`;
+      switch (r.state) {
+        case "no-targets":              return `<tr>${msg("No analyst targets available")}</tr>`;
+        case "targets-unavailable":     return `<tr>${msg("Targets unavailable")}</tr>`;
+        case "temporarily-unavailable": return `<tr>${msg("Temporarily unavailable")}</tr>`;
+        case "price-unavailable":
+          if (r.low == null) return `<tr>${msg("Price unavailable")}</tr>`;
+          return `<tr>${ticker}${price}<td class="tr-range">${targetRangeHtml(r)}</td><td><span class="tr-msg">Price unavailable</span></td></tr>`;
+        case "ok": {
+          const s = targetStatusText(r);
+          return `<tr>${ticker}${price}<td class="tr-range">${targetRangeHtml(r)}</td>
+            <td>${s.label}${s.sub ? `<span class="tr-status-sub">${s.sub}</span>` : ""}</td></tr>`;
+        }
+        default: return `<tr>${msg("Targets unavailable")}</tr>`;
+      }
+    }
+
+    function renderTargets(tab) {
+      const cfg = TARGET_VIEWS[tab];
+      const symbols = cfg.symbols();
+      const body = document.getElementById(cfg.body);
+      const foot = document.getElementById(cfg.foot);
+      if (symbols.length === 0) {
+        body.innerHTML = `<tr><td colspan="4" class="empty">${cfg.empty}</td></tr>`;
+        foot.textContent = "";
+        return;
+      }
+      body.innerHTML = symbols.map(sym => targetRowHtml(sym, targetsData[sym])).join("");
+      const times = symbols.map(s => targetsData[s]?.targetsRetrievedAt).filter(t => t != null);
+      const oldest = times.length ? Math.min(...times) : null;
+      foot.textContent = "Analyst price targets reflect opinions, not intrinsic value or a limit on potential losses."
+        + (oldest ? ` Targets retrieved ${fmtDate(new Date(oldest * 1000).toISOString())}${times.some(t => t !== oldest) ? " or later" : ""}.` : "");
+    }
+
+    applyViews();
 
     async function toggleShortlist(id, currentlyShortlisted) {
       const action = currentlyShortlisted ? "unshortlist" : "shortlist";
@@ -1669,6 +1976,7 @@
       if (!dashboard.classList.contains("hidden")) {
         loadPrices();
         loadMarketDirection();
+        loadAnalystTargets();   // no-op unless a targets view is on screen; targets come from the server cache
       }
     }, 60_000);
   </script>

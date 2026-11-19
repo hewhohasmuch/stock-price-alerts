@@ -26,6 +26,8 @@ async function fetchChart(symbol: string): Promise<PriceResult | null> {
     price: meta.regularMarketPrice,
     name: meta.shortName || meta.longName || meta.symbol || symbol,
     previousClose: typeof previousClose === "number" ? previousClose : undefined,
+    currency: typeof meta.currency === "string" ? meta.currency : undefined,
+    quoteTime: typeof meta.regularMarketTime === "number" ? meta.regularMarketTime : undefined,
   };
 }
 

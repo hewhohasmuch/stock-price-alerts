@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm run build      # tsc --noEmit — type-check src/ and api/, no output
-npm test           # vitest run — alert-evaluator, market-direction, market-hours and account-recovery suites (the default suite; there is no CI or pre-commit hook)
+npm test           # vitest run — alert-evaluator, market-direction, market-hours, account-recovery and analyst-targets suites (the default suite; there is no CI or pre-commit hook)
 npm run test:all   # vitest run — all test files, see caveat below
 npm run test:db    # opt-in DB guarantees for account recovery; needs TEST_DATABASE_URL (localhost only)
 npm run cli -- <cmd>   # run the CLI (tsx src/cli.ts)
@@ -64,6 +64,29 @@ The dashboard shows one arrow for each of `^GSPC ^DJI ^IXIC ^RUT`, served by `GE
   `marketState` is open only if `isMarketOpen()` is true **and** the bars are from today's session. That guards against the `isNyseHours()` fallback in `src/utils/market-hours.ts`, which ignores holidays and early closes.
 - Per-index `fullScale` and `lagThresholdSec` live in `INDEXES`. They're still initial defaults (300s lag) until calibrated from a live weekday session — Task 6 of `docs/superpowers/plans/2026-10-04-market-direction-arrows.md`; see also the spec `docs/superpowers/specs/2026-10-04-market-direction-arrows-design.md`.
 
+### Analyst Targets view (`src/services/analyst-targets*.ts`)
+
+Read-only analysts' **12-month price targets** (low/median/high + analyst count, with the average as a secondary note) compared with the live quote, served by `GET /api/analyst-targets?symbols=…` (requires login, max 60 symbols). Like the market-direction strip, it's independent of alerts and the scheduler and stores nothing in the database. **Framing rule:** these are opinions, never intrinsic value or a margin of safety. Labels stay factual ("Below lowest target"), colors stay neutral, and anything that can't be established is suppressed instead of guessed. (History: an automated EDGAR DCF and then manual intrinsic-value entry were both rejected before this.)
+
+- **`analyst-targets.ts`** is the pure logic:
+  - `validateTargets()` rejects non-positive or out-of-order targets and non-integer counts. low = mean = high is valid. The median is optional: missing or non-numeric becomes `null`, but a numeric median outside low…high is rejected (`median-out-of-order`).
+  - `parseYahooFinancialData()` is the Yahoo adapter (`targetLowPrice`/`targetMeanPrice`/`targetMedianPrice`/`targetHighPrice`/`numberOfAnalystOpinions`).
+  - **The "middle" target is the median** (`midTarget()`), because one outlier analyst can drag the mean far from what most analysts expect. When Yahoo gives no median it falls back to the mean, and every row carries `basis: "median" | "mean"` so the UI labels it truthfully — never present the mean as a median.
+  - `classify()` uses `pct = (price − mid) / mid`, so the denominator is the middle target ($80 vs $100 → "20% below"). Statuses are `below-low | below-mid | at-mid | above-mid | above-high`; "At median target" is shown when the pct rounds to 0.0%.
+  - `buildRow()` suppresses the comparison for non-USD listings, foreign reporting currencies (ADRs such as TSM: TWD reporting, USD quote), a >15% gap between Yahoo's own price and the quote, and mid/price outside 0.2–5×. That last check is a heuristic for stale pre-split targets.
+- **`analyst-targets-service.ts`** handles I/O:
+  - Yahoo `quoteSummary?modules=financialData` needs a **cookie + crumb session**: `fc.yahoo.com` answers 404 but sets the cookie, then `getcrumb`. Cookie and crumb are held and refreshed together, with one shared in-flight refresh.
+  - A 401 gets one refresh and one retry. A failed refresh, a repeated 401 or a 429 opens a provider-wide **circuit breaker** (2 min backoff doubling to 15 min), so symbols aren't retried one by one.
+  - Fetches run 3 at a time with a 6 s timeout each and a **15 s overall deadline**.
+  - Quotes come from `fetchPrices()`, and each row returns the exact price, currency and quote time used for its status (one snapshot per row).
+- **Row states and caching** (in memory, lost on a cold start):
+  - `ok` and `price-unavailable` (targets cached 6 h, status recomputed with every fresh quote)
+  - `no-targets`: Yahoo's 404 "No fundamentals data found" (ETFs) or "not found" is a real no-coverage answer (6 h)
+  - `targets-unavailable`: invalid or incomparable data (1 h)
+  - `temporarily-unavailable`: timeout, auth, 429, 5xx or deadline (retried after 2 min; if older good data under 24 h exists, it's served instead with its original retrieval time)
+
+  Internal `reason` codes are logged (`[analyst-targets]`) and stripped from the response. Yahoo provides **no target date**, so the UI shows only when targets were *retrieved*.
+
 ### Database (`src/db.ts`)
 
 Single Postgres pool (`pg`), schema created/migrated idempotently on startup via `initDb()` (`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF NOT EXISTS` — there is no separate migrations directory/tool). `src/server.ts` calls `initDb()` lazily on first request (serverless-safe) rather than at module load. Typed-alert params/state are stored as `JSONB` columns (`params_json`, `state_json`); legacy alerts use dedicated `above_price`/`below_price` columns. Prefers `DATABASE_URL_UNPOOLED` over `DATABASE_URL` (Neon's pooled connection blocks startup params).
@@ -90,11 +113,16 @@ The dashboard has two tabs (`showWatchlistTab()`/`showShortlistTab()`):
 - **Watchlist** — the "Add Alert" form + the alerts table (the original view).
 - **Shortlist** — a table (Ticker/Price/Shares/Total/Stage) of alerts the user has starred via the bookmark toggle on each Watchlist row. It's a **derived client-side view**: `renderShortlistTable()` filters the same `allAlerts` array loaded by `loadAlerts()` for `shortlisted === true` (sorted by symbol) — no separate fetch. Price reuses the existing `.price-cell`/`loadPrices()` mechanism; Total (`Price × Shares`) and the staged-only subtotal (`recomputeShortlistTotals()`) are computed client-side and never persisted. Mutations follow the app's fire-`PATCH`-then-`loadAlerts()` convention, which re-renders both tabs and keeps them in sync.
 
+Each tab's card header also has a view toggle: **Alerts | Analyst Targets** on Watchlist and **Plan | Analyst Targets** on Shortlist. It's a WAI-ARIA tablist (`aria-selected`, roving tabindex, arrow keys). `setView()` saves each tab's choice separately in `localStorage` (`view.watchlist`/`view.shortlist`, wrapped in try/catch).
+- The Analyst Targets table (Ticker/Price/Analyst range/Status, `.targets-table`, a real table on mobile) is rendered by `renderTargets()`. Watchlist shows one row per unique ticker; Shortlist shows the shortlisted tickers. The range cell is a bar with a tick at the middle target, then low/middle/high spread across the cell (whole-dollar targets drop `.00`), then `(N analysts)`. That count line adds `· avg $X` only when the mean is ≥10% from the median (`AVG_NOTE_GAP`), a sign that one or two analysts are skewing the average.
+- Rows come entirely from `/api/analyst-targets`. They deliberately don't use `.price-cell`, so `loadPrices()` can't make the price, the dot and the status disagree.
+- `refreshTargetsView()` runs from `loadAlerts()` and tab switches, re-renders, and fetches only when the visible ticker set changed. The 60 s interval also calls `loadAnalystTargets()`, which never overlaps itself (it queues one re-run) and drops responses from a logged-out session (`targetsGen`).
+
 A market-direction strip (`#marketStrip`, `loadMarketDirection()`) sits above the tab buttons and refreshes in the same 60s interval as prices. It is always one row of four tiles (`repeat(4, minmax(0, 1fr))`, labels S&P 500 / Dow / Nasdaq / Russell 2K from `INDEXES`); each tile shows only the label, the arrow and a warning badge when data quality isn't ok (Delayed / Incomplete / Unavailable / Stale). Everything else (% vs. baseline, as-of/Closed time, baseline, same-side %, score, coverage) is in a popover toggled by tapping/clicking the tile (`toggleMdPop()`, `aria-expanded`; Escape closes). Hover-to-preview only applies under `@media (hover: hover) and (pointer: fine)` — touch browsers leave a tapped tile in `:hover`, which would stop a second tap from closing it. Arrow angle = `score × 90°`; color = `color-mix(in oklab, …)` between four stops (`mdColor()`); in dark theme the arrow path gets a thin light outline (no backdrop) so dark red/green stay visible.
 
 ## Configuration
 
 Env vars are read once into `src/config.ts` (loaded via `dotenv/config`). Notification channels are independently optional — checked via `isEmailConfigured()`/`isSmsConfigured()`; a missing channel is skipped, not an error. See `.env.example` for the full list. Notable ones not obvious from naming:
 - `CRON_SECRET` — shared secret sent as `x-cron-secret` to authenticate `GET /api/cron`; not in `.env.example`. Must match in three places: Vercel env vars (marked Sensitive, so it can't be read back — rotate rather than copy, and redeploy after changing it), the GitHub Actions secret, and the cron-job.org job's header.
-- `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` — only used for the market-open check, not price data (Yahoo Finance is unauthenticated and used for all actual quotes).
+- `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` — only used for the market-open check, not price data (Yahoo Finance is used for all actual quotes; its chart API needs no auth, while the analyst-target `quoteSummary` endpoint needs the cookie+crumb session described above. No API key either way).
 - `APP_URL` — trusted base URL for password-reset and email-verification links (never derived from request headers); without it, those emails are not sent. Set per Vercel environment.

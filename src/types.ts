@@ -65,6 +65,8 @@ export interface PriceResult {
   price: number;
   name: string;
   previousClose?: number;
+  currency?: string;    // listing currency, e.g. "USD"
+  quoteTime?: number;   // unix seconds of regularMarketPrice
 }
 
 export interface TriggeredAlert {

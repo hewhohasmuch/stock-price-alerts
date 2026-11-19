@@ -16,6 +16,7 @@ import {
 import type { AlertParams, AlertType, PercentChangeParams } from "./types.js";
 import { fetchSinglePrice, fetchPrices } from "./services/price-fetcher.js";
 import { getMarketDirection } from "./services/market-direction-service.js";
+import { getAnalystTargets, MAX_SYMBOLS as MAX_TARGET_SYMBOLS } from "./services/analyst-targets-service.js";
 import { checkPrices } from "./scheduler.js";
 import { isMarketOpen } from "./utils/market-hours.js";
 import { config } from "./config.js";
@@ -699,6 +700,26 @@ app.get("/api/market-direction", requireAuth, async (_req, res) => {
   } catch (err) {
     console.error("GET /api/market-direction error:", (err as Error).message);
     res.status(500).json({ error: "Failed to load market direction" });
+  }
+});
+
+// Analysts' 12-month price targets vs. the live quote. Opinions, not intrinsic value.
+app.get("/api/analyst-targets", requireAuth, async (req, res) => {
+  try {
+    const raw = req.query.symbols;
+    if (typeof raw !== "string" || !raw.trim()) {
+      res.status(400).json({ error: "symbols query param required (comma-separated)" });
+      return;
+    }
+    const symbols = [...new Set(raw.split(",").map(s => s.trim().toUpperCase()).filter(Boolean))];
+    if (symbols.length > MAX_TARGET_SYMBOLS) {
+      res.status(400).json({ error: `At most ${MAX_TARGET_SYMBOLS} symbols per request` });
+      return;
+    }
+    res.json(await getAnalystTargets(symbols));
+  } catch (err) {
+    console.error("GET /api/analyst-targets error:", (err as Error).message);
+    res.status(500).json({ error: "Failed to load analyst targets" });
   }
 });
 
