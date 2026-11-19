@@ -92,6 +92,8 @@ npm run web
 # Open http://localhost:3000
 ```
 
+The dashboard has two tabs, Watchlist (your alerts) and Shortlist (tickers you've starred). Each has a toggle that switches its table to **Analyst Targets**. That view shows analysts' low/median/high 12-month price targets and the analyst count next to the live price, with a factual status such as "Below lowest target" or "12.0% below median target". The median is used because one outlier analyst can't skew it; when the average differs from the median by 10% or more, it's shown as a small "avg" note. It needs no input from you. Targets come from Yahoo Finance and cover USD listings only. ETFs, foreign listings and ADRs show "No analyst targets available" or "Targets unavailable" rather than a guess. Analyst targets are opinions, not intrinsic value and not a limit on potential losses.
+
 ### Scheduler (background monitoring)
 
 ```bash
