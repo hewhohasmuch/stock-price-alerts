@@ -154,7 +154,30 @@
     .mono { font-family: monospace; font-size: 12px; color: var(--text-muted); }
 
     /* Card header with a view toggle (Alerts | Analyst Targets, Plan | Analyst Targets) */
-    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    /* Sticky at the top of the scrolling list (.dash-scroll). It must start flush with the top
+       of that scroller (list card has no top padding, its container no top margin), or it
+       travels a few px before sticking. It spans the card's side padding and has the card's
+       top corners, so once stuck it reads as the card's top edge. No bottom margin: the
+       Shortlist column headers stick directly beneath it. */
+    .card.list-card { padding-top: 0; --card-pad: 20px; }
+    .card-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+      position: sticky; top: 0; z-index: 5; background: var(--surface);
+      margin: 0 calc(-1 * var(--card-pad)); padding: 20px var(--card-pad) 14px;
+      border-radius: 8px 8px 0 0;
+    }
+    /* Shortlist column headers (Plan and Analyst Targets) stick just below the header row.
+       --head-h is the header row's height, measured in JS. Collapsed table borders don't move
+       with sticky cells, so the underline is an inset shadow instead. */
+    #shortlistView thead th {
+      position: sticky; top: var(--head-h, 0px); z-index: 4; background: var(--surface);
+      border-bottom: none; box-shadow: inset 0 -2px 0 var(--border-light);
+    }
+    /* Hidden on screen but still read by screen readers (keeps table column names) */
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
     .card-head h2 { margin-bottom: 0; }
     .view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
     .vt-btn {
@@ -344,8 +367,12 @@
       /* Shortlist "add to list" toggle: pin to the card's bottom-right corner */
       .actions .btn-shortlist-toggle { position: absolute; bottom: 6px; right: 8px; }
 
-      /* Shortlist keeps a real table on mobile (no card reflow) */
-      #shortlistView .card { overflow-x: auto; }
+      /* Shortlist keeps a real table on mobile (no card reflow), compacted to fit a phone.
+         Any overflow on an ancestor breaks the sticky header row and column headers, so
+         sideways scroll is only a fallback: JS adds .overflowing when the table still
+         doesn't fit (very narrow screens), and there the column headers stop sticking. */
+      #shortlistView .table-scroll.overflowing { overflow-x: auto; }
+      #shortlistView .shares-input { width: 46px !important; }
       #shortlistView table { display: table; }
       #shortlistView thead { display: table-header-group; }
       #shortlistView tbody { display: table-row-group; }
@@ -354,10 +381,10 @@
         display: table-row; background: none; border: none; border-left: none;
         border-radius: 0; padding: 0; margin: 0;
       }
-      #shortlistView th { display: table-cell; }
+      #shortlistView th { display: table-cell; padding: 8px 3px; font-size: 10px; }
       #shortlistView td {
         display: table-cell; width: auto; order: 0;
-        border-bottom: 1px solid var(--border-lighter); padding: 8px 4px; font-size: 12px;
+        border-bottom: 1px solid var(--border-lighter); padding: 8px 3px; font-size: 12px;
       }
       #shortlistView td:before { display: none; }
       #shortlistView .shortlist-total-row td { border-bottom: none; }
@@ -378,7 +405,8 @@
       }
       .targets-table td:before { display: none; }
       .tr-range { min-width: 110px; }
-      .card-head { margin-bottom: 10px; }
+      .card.list-card { --card-pad: 14px; }
+      .card-head { padding-top: 14px; padding-bottom: 10px; }
       .vt-btn { padding: 4px 10px; font-size: 12px; }
 
       /* Force line break after first row */
@@ -563,7 +591,7 @@
 
     <div class="dash-scroll">
     <div class="container" style="margin-top:0;">
-    <div class="card">
+    <div class="card list-card">
       <div class="card-head">
         <h2>Alerts</h2>
         <div class="view-toggle" role="tablist" aria-label="Watchlist view" data-tab="watchlist">
@@ -573,7 +601,7 @@
       </div>
       <div id="watchlistTargets" class="hidden" role="tabpanel" aria-label="Analyst targets for watchlist tickers">
         <table class="targets-table">
-          <thead><tr><th>Ticker</th><th>Price</th><th>Analyst range</th><th>Status</th></tr></thead>
+          <thead class="sr-only"><tr><th>Ticker</th><th>Price</th><th>Analyst range</th><th>Status</th></tr></thead>
           <tbody id="watchlistTargetsBody"></tbody>
         </table>
         <p class="targets-foot" id="watchlistTargetsFoot"></p>
@@ -601,9 +629,9 @@
     </div>
     </div>
 
-    <div id="shortlistView" class="hidden dash-scroll">
-    <div class="container" style="margin-top:12px;">
-    <div class="card">
+    <div id="shortlistView" class="hidden dash-scroll" style="margin-top:12px;">
+    <div class="container" style="margin-top:0;">
+    <div class="card list-card">
       <div class="card-head">
         <h2>Shortlist</h2>
         <div class="view-toggle" role="tablist" aria-label="Shortlist view" data-tab="shortlist">
@@ -611,13 +639,14 @@
           <button type="button" role="tab" class="vt-btn" data-mode="targets" aria-controls="shortlistTargets" onclick="setView('shortlist', 'targets')">Analyst Targets</button>
         </div>
       </div>
-      <div id="shortlistTargets" class="hidden" role="tabpanel" aria-label="Analyst targets for shortlisted tickers">
+      <div id="shortlistTargets" class="hidden table-scroll" role="tabpanel" aria-label="Analyst targets for shortlisted tickers">
         <table class="targets-table">
           <thead><tr><th>Ticker</th><th>Price</th><th>Analyst range</th><th>Status</th></tr></thead>
           <tbody id="shortlistTargetsBody"></tbody>
         </table>
         <p class="targets-foot" id="shortlistTargetsFoot"></p>
       </div>
+      <div class="table-scroll">
       <table id="shortlistPlanTable" role="tabpanel">
         <thead>
           <tr>
@@ -640,6 +669,7 @@
           </tr>
         </tfoot>
       </table>
+      </div>
     </div>
     </div>
     </div>
@@ -1657,6 +1687,32 @@
       try { localStorage.setItem(TARGET_VIEWS[tab].storageKey, mode); } catch {}
       applyViews();
       refreshTargetsView();
+    }
+
+    // Sticky Shortlist column headers sit just below the sticky header row, whose height changes
+    // with the layout (mobile, wrapping toggle). Rounded down so a fractional height can't leave
+    // a sliver gap for rows to show through.
+    if ("ResizeObserver" in window) {
+      const headObserver = new ResizeObserver(entries => {
+        for (const e of entries) {
+          const h = Math.floor(e.target.getBoundingClientRect().height);
+          if (h > 0) e.target.parentElement.style.setProperty("--head-h", h + "px");
+        }
+      });
+      document.querySelectorAll(".card-head").forEach(el => headObserver.observe(el));
+
+      // Shortlist tables scroll sideways only when they don't fit (see .overflowing in the CSS).
+      // Re-checked whenever a wrapper or its table resizes: tab shown, view toggled, prices loaded.
+      const fitObserver = new ResizeObserver(() => {
+        document.querySelectorAll("#shortlistView .table-scroll").forEach(wrap => {
+          const table = wrap.querySelector("table");
+          wrap.classList.toggle("overflowing", table.offsetWidth > wrap.clientWidth + 1);
+        });
+      });
+      document.querySelectorAll("#shortlistView .table-scroll").forEach(wrap => {
+        fitObserver.observe(wrap);
+        fitObserver.observe(wrap.querySelector("table"));
+      });
     }
 
     // Arrow keys switch views inside a toggle (WAI-ARIA tabs pattern).
