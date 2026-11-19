@@ -4,11 +4,13 @@ CLI tool and web dashboard that monitors stock prices and sends email/SMS alerts
 
 The web dashboard (live at https://wekintech.com) also has:
 - **Market direction arrows** for the S&P 500, Dow, Nasdaq and Russell 2000, based on the last ~90 minutes of trading. Tap a card for details.
+- **Shortlist**: a planning list of tickers with share counts and a running total of the ones you've marked as staged.
+- **Analyst Targets**: analysts' 12-month price targets next to the live price, for both lists (see [Web Dashboard](#web-dashboard)).
 - **Accounts with recovery**: sign-up with email confirmation, "Forgot password?" via an emailed one-time link, and password/email changes in Settings.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org) 20+
+- [Node.js](https://nodejs.org) 22+ (24 LTS recommended; production on Vercel runs Node 24)
 - [Git](https://git-scm.com)
 
 ## Setup
@@ -57,6 +59,8 @@ Copy `.env.example` to `.env` and fill in your credentials:
 | `NOTIFY_SMS` | Phone number to receive SMS alerts |
 | `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` | Used only to check whether the market is open (without them it's treated as closed) |
 | `CHECK_INTERVAL_CRON` | Cron expression for the local scheduler (default: `*/5 * * * *`) |
+| `COOLDOWN_MINUTES` | Currently unused: each alert type has its own built-in limit (e.g. a price-threshold alert notifies at most once per day per direction) |
+| `PORT` | Port for `npm run web` (default: `3000`) |
 | `DEV_LOG_EMAIL_LINKS` | Local development only: set to `1` to print account emails to the console instead of sending them |
 
 Alert emails go to each user's own confirmed email address (set at sign-up or in Settings), not to a fixed address. Email and SMS are independent — configure either or both.
@@ -92,7 +96,7 @@ npm run web
 # Open http://localhost:3000
 ```
 
-The dashboard has two tabs, Watchlist (your alerts) and Shortlist (tickers you've starred). Each has a toggle that switches its table to **Analyst Targets**. That view shows analysts' low/median/high 12-month price targets and the analyst count next to the live price, with a factual status such as "Below lowest target" or "12.0% below median target". The median is used because one outlier analyst can't skew it; when the average differs from the median by 10% or more, it's shown as a small "avg" note. It needs no input from you. Targets come from Yahoo Finance and cover USD listings only. ETFs, foreign listings and ADRs show "No analyst targets available" or "Targets unavailable" rather than a guess. Analyst targets are opinions, not intrinsic value and not a limit on potential losses.
+The dashboard has two tabs: Watchlist (your alerts) and Shortlist (tickers you've added with the bookmark icon on a Watchlist row). On the Shortlist you can set a share count for each ticker and tick Stage; the TOTAL row adds up only the staged ones. Each tab's title row, with its view toggle, stays at the top while you scroll the list. Each has a toggle that switches its table to **Analyst Targets**. That view shows analysts' low/median/high 12-month price targets and the analyst count next to the live price, with a factual status such as "Below lowest target" or "12.0% below median target". The median is used because one outlier analyst can't skew it; when the average differs from the median by 10% or more, it's shown as a small "avg" note. It needs no input from you. Targets come from Yahoo Finance and cover USD listings only. ETFs, foreign listings and ADRs show "No analyst targets available" or "Targets unavailable" rather than a guess. Analyst targets are opinions, not intrinsic value and not a limit on potential losses.
 
 ### Scheduler (background monitoring)
 
@@ -100,4 +104,4 @@ The dashboard has two tabs, Watchlist (your alerts) and Shortlist (tickers you'v
 npm start
 ```
 
-Runs price checks on the configured cron schedule and sends notifications when thresholds are crossed.
+Runs price checks on the configured cron schedule and sends notifications when thresholds are crossed. This is for local use. In production (Vercel) there's no long-running process: an external cron job calls `GET /api/cron` every 5 minutes instead.
