@@ -1643,7 +1643,7 @@
       shortlist: {
         storageKey: "view.shortlist", primary: "plan", primaryEl: "shortlistPlanTable",
         panel: "shortlistTargets", body: "shortlistTargetsBody", foot: "shortlistTargetsFoot",
-        tabView: "shortlistView", empty: "No shortlisted tickers yet. Tap the list icon on a Watchlist row to add one.",
+        tabView: "shortlistView", empty: "No shortlisted tickers yet. Tap the bookmark icon on a Watchlist row to add one.",
         symbols: () => [...new Set(allAlerts.filter(a => a.shortlisted).map(a => a.symbol))].sort(),
       },
     };
@@ -1889,7 +1889,7 @@
       const rows = allAlerts.filter(a => a.shortlisted).sort((a, b) => a.symbol.localeCompare(b.symbol));
       document.getElementById("shortlistCount").textContent = `(${rows.length})`;
       if (rows.length === 0) {
-        shortlistBody.innerHTML = '<tr><td colspan="6" class="empty">No shortlisted tickers yet. Tap the list icon on a Watchlist row to add one.</td></tr>';
+        shortlistBody.innerHTML = '<tr><td colspan="6" class="empty">No shortlisted tickers yet. Tap the bookmark icon on a Watchlist row to add one.</td></tr>';
         recomputeShortlistTotals();
         return;
       }
